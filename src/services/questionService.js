@@ -7,20 +7,18 @@ export const questionService = {
     return data;
   },
 
-  // 🚀 ১. Board History Fetch Fix (জয়েন কোয়েরি আপডেট করা হয়েছে)
+  // 🚀 ১. Board History Fetch Fix
   getQuestions: async (chapterId, topicId = null, examMaterialOnly = false, contentMaterialOnly = false) => {
     let query = supabase
       .from('questions')
-      // ✅ FIX: question_board_history এবং boards একসাথে ফেচ করা হচ্ছে
       .select('*, mcq_options(*), cq_parts(*), question_board_history(year, boards(id, name, short_name))')
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
 
-    // 🚀 ২. Strict Topic Optional Check (টাইপ সেফ)
+    // 🚀 ২. UX FIX: টপিক সিলেক্ট করা থাকলে শুধু ওই টপিকের প্রশ্ন দেখাবে, 
+    // আর সিলেক্ট করা না থাকলে ওই চ্যাপ্টারের "সব" প্রশ্ন দেখাবে।
     if (topicId !== null && topicId !== '') {
       query = query.eq('topic_id', topicId);
-    } else {
-      query = query.is('topic_id', null);
     }
 
     // ফিল্টার অপশনস
@@ -36,7 +34,7 @@ export const questionService = {
   addQuestion: async ({ 
     subjectId, chapterId, topicId, qType, text, imagePath, 
     explanation, solution, importance, isExamMaterial, isContentMaterial, 
-    optionsArray, cqParts, boardTags // 👈 boardId/boardYear এর বদলে boardTags Array
+    optionsArray, cqParts, boardTags 
   }) => {
     
     // ১. Main Question Insert

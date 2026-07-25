@@ -52,7 +52,7 @@ export default function Taxonomy() {
   };
 
   const openModal = (type) => {
-    setFormData({});
+    setFormData(type === 'chapter' ? { isSubChapter: false } : {});
     setModal({ isOpen: true, type });
   };
 
@@ -67,13 +67,12 @@ export default function Taxonomy() {
         toast.success("Subject added successfully.");
       } 
       else if (modal.type === 'chapter') {
-        // API কল আপডেট করা হলো নতুন ডাটাবেজ কলাম অনুযায়ী
         const newChap = await taxonomyApi.addChapter({
           subject_id: selectedSubject.id,
           chapter_label: formData.chapterLabel,
           title: formData.title,
-          section_name: formData.sectionName || null,
-          parent_chapter_id: formData.parentChapterId || null
+          section_name: formData.isSubChapter ? null : (formData.sectionName || null),
+          parent_chapter_id: formData.isSubChapter ? formData.parentChapterId : null
         });
         setChapters([...chapters, newChap]);
         toast.success("Chapter added successfully.");
@@ -110,7 +109,6 @@ export default function Taxonomy() {
     if (!window.confirm("Are you sure? Deleting this chapter will also delete all its sub-chapters and topics!")) return;
     try {
       await taxonomyApi.deleteChapter(id);
-      // Main chapter ডিলিট হলে UI থেকে তার sub-chapter গুলোও সরাতে হবে
       setChapters(chapters.filter(c => c.id !== id && c.parent_chapter_id !== id));
       if (selectedChapter?.id === id || selectedChapter?.parent_chapter_id === id) { 
         setSelectedChapter(null); 
@@ -134,7 +132,6 @@ export default function Taxonomy() {
     }
   };
 
-  // 🚀 Chapters Grouping Logic: Section অনুযায়ী সাজানো এবং Parent-Child মেলানো
   const renderChapters = () => {
     if (!chapters || chapters.length === 0) {
       return (
@@ -145,7 +142,6 @@ export default function Taxonomy() {
       );
     }
 
-    // ১. Section অনুযায়ী গ্রুপ করা (গদ্য, পদ্য, বীজগণিত)
     const grouped = chapters.reduce((acc, chap) => {
       const sec = chap.section_name || 'General Chapters';
       if (!acc[sec]) acc[sec] = [];
@@ -155,23 +151,15 @@ export default function Taxonomy() {
 
     return Object.entries(grouped).map(([sectionName, sectionChapters]) => (
       <div key={sectionName} className="mb-4">
-        {/* Section Header */}
         <div className="text-[10px] uppercase text-slate-400 font-black tracking-widest mx-2 mb-2 pb-1 border-b border-[#1E293B]">
           {sectionName}
         </div>
 
-        {/* Main Chapters */}
         {sectionChapters.filter(c => !c.parent_chapter_id).map(mainChap => (
           <React.Fragment key={mainChap.id}>
-            {/* Main Chapter Card */}
             <ChapterCard chap={mainChap} isSub={false} />
-            
-            {/* Sub Chapters (১১.১, ১১.২) */}
-            {sectionChapters
-              .filter(c => c.parent_chapter_id === mainChap.id)
-              .map(subChap => (
+            {chapters.filter(c => c.parent_chapter_id === mainChap.id).map(subChap => (
                 <div key={subChap.id} className="pl-6 relative">
-                  {/* Tree connector line */}
                   <div className="absolute left-3 top-0 bottom-4 w-px bg-[#1E293B]"></div>
                   <ChapterCard chap={subChap} isSub={true} />
                 </div>
@@ -182,7 +170,6 @@ export default function Taxonomy() {
     ));
   };
 
-  // Reusable Chapter Card Widget
   const ChapterCard = ({ chap, isSub }) => (
     <div 
       onClick={() => handleChapterClick(chap)}
@@ -201,17 +188,8 @@ export default function Taxonomy() {
           <div className="font-bold text-sm leading-tight">{chap.title}</div>
         </div>
       </div>
-
       <div className="flex items-center gap-1">
-        <button 
-          onClick={(e) => handleDeleteChapter(e, chap.id)}
-          className={`p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 ${
-            selectedChapter?.id === chap.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'
-          }`}
-          title="Delete Chapter"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <button onClick={(e) => handleDeleteChapter(e, chap.id)} className={`p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 ${selectedChapter?.id === chap.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}`} title="Delete Chapter"><Trash2 className="w-4 h-4" /></button>
         <ChevronRight className={`w-4 h-4 transition-transform ${selectedChapter?.id === chap.id ? 'opacity-100 translate-x-1' : 'opacity-0 group-hover:opacity-100'}`} />
       </div>
     </div>
@@ -219,9 +197,7 @@ export default function Taxonomy() {
 
   return (
     <div className="h-full flex flex-col relative bg-transparent text-slate-200">
-      <Toaster position="top-right" 
-        toastOptions={{ style: { background: '#0B0F19', color: '#F1F5F9', border: '1px solid #1E293B' } }} 
-      />
+      <Toaster position="top-right" toastOptions={{ style: { background: '#0B0F19', color: '#F1F5F9', border: '1px solid #1E293B' } }} />
       
       {/* Header Area */}
       <div className="flex justify-between items-center mb-6 bg-[#0B0F19] p-6 rounded-3xl shadow-lg border border-[#1E293B]">
@@ -238,28 +214,16 @@ export default function Taxonomy() {
         <div className="bg-[#0B0F19] rounded-3xl shadow-lg border border-[#1E293B] flex flex-col overflow-hidden">
           <div className="p-4 border-b border-[#1E293B] flex justify-between items-center bg-[#07090E]/50">
             <h2 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-              <div className="p-1.5 bg-[#2563EB]/10 border border-[#2563EB]/20 rounded-lg"><LayoutGrid className="w-4 h-4 text-[#2563EB]" /></div>
-              Subjects
+              <div className="p-1.5 bg-[#2563EB]/10 border border-[#2563EB]/20 rounded-lg"><LayoutGrid className="w-4 h-4 text-[#2563EB]" /></div> Subjects
             </h2>
             <button onClick={() => openModal('subject')} className="text-[#2563EB] bg-[#2563EB]/10 hover:bg-[#2563EB] hover:text-white border border-[#2563EB]/20 p-1.5 rounded-xl transition-all"><Plus className="w-4 h-4" /></button>
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
-            {/* Same Subjects Rendering as before... */}
             {subjects.map(sub => (
-              <div 
-                key={sub.id} 
-                onClick={() => handleSubjectClick(sub)}
-                className={`p-4 rounded-2xl cursor-pointer flex justify-between items-center group transition-all duration-200 border relative ${
-                  selectedSubject?.id === sub.id 
-                    ? 'bg-[#2563EB] text-white border-[#2563EB] shadow-lg shadow-[#2563EB]/20' 
-                    : 'bg-transparent hover:bg-[#1E293B]/40 border-transparent hover:border-[#1E293B]'
-                }`}
-              >
+              <div key={sub.id} onClick={() => handleSubjectClick(sub)} className={`p-4 rounded-2xl cursor-pointer flex justify-between items-center group transition-all duration-200 border relative ${selectedSubject?.id === sub.id ? 'bg-[#2563EB] text-white border-[#2563EB] shadow-lg shadow-[#2563EB]/20' : 'bg-transparent hover:bg-[#1E293B]/40 border-transparent hover:border-[#1E293B]'}`}>
                 <div>
                   <div className="font-bold text-sm">{sub.name}</div>
-                  <div className={`text-[10px] mt-1 font-medium uppercase tracking-wider ${selectedSubject?.id === sub.id ? 'text-blue-200' : 'text-slate-500'}`}>
-                    {sub.class_level} • {sub.board_group}
-                  </div>
+                  <div className={`text-[10px] mt-1 font-medium uppercase tracking-wider ${selectedSubject?.id === sub.id ? 'text-blue-200' : 'text-slate-500'}`}>{sub.class_level} • {sub.board_group}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button onClick={(e) => handleDeleteSubject(e, sub.id)} className={`p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 ${selectedSubject?.id === sub.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}`}><Trash2 className="w-4 h-4" /></button>
@@ -274,57 +238,44 @@ export default function Taxonomy() {
         <div className="bg-[#0B0F19] rounded-3xl shadow-lg border border-[#1E293B] flex flex-col overflow-hidden">
           <div className="p-4 border-b border-[#1E293B] flex justify-between items-center bg-[#07090E]/50">
             <h2 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-              <div className="p-1.5 bg-[#2563EB]/10 border border-[#2563EB]/20 rounded-lg"><Layers className="w-4 h-4 text-[#2563EB]" /></div>
-              Chapters & Sections
+              <div className="p-1.5 bg-[#2563EB]/10 border border-[#2563EB]/20 rounded-lg"><Layers className="w-4 h-4 text-[#2563EB]" /></div> Chapters & Sections
             </h2>
             <button onClick={() => openModal('chapter')} disabled={!selectedSubject} className="text-[#2563EB] bg-[#2563EB]/10 hover:bg-[#2563EB] hover:text-white border border-[#2563EB]/20 p-1.5 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed"><Plus className="w-4 h-4" /></button>
           </div>
           <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
             {!selectedSubject ? (
               <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs font-medium">
-                <LayoutGrid className="w-12 h-12 mb-3 opacity-10 text-slate-400" />
-                <p>Select a Subject first</p>
+                <LayoutGrid className="w-12 h-12 mb-3 opacity-10 text-slate-400" /> <p>Select a Subject first</p>
               </div>
-            ) : (
-              renderChapters()
-            )}
+            ) : renderChapters()}
           </div>
         </div>
 
-        {/* Column 3: Topics (Same as before) */}
+        {/* Column 3: Topics */}
         <div className="bg-[#0B0F19] rounded-3xl shadow-lg border border-[#1E293B] flex flex-col overflow-hidden">
-          {/* ... [Topics Header & Render logic exactly same as your code] ... */}
           <div className="p-4 border-b border-[#1E293B] flex justify-between items-center bg-[#07090E]/50">
             <h2 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-              <div className="p-1.5 bg-[#2563EB]/10 border border-[#2563EB]/20 rounded-lg"><Bookmark className="w-4 h-4 text-[#2563EB]" /></div>
-              Topics
+              <div className="p-1.5 bg-[#2563EB]/10 border border-[#2563EB]/20 rounded-lg"><Bookmark className="w-4 h-4 text-[#2563EB]" /></div> Topics
             </h2>
             <button onClick={() => openModal('topic')} disabled={!selectedChapter} className="text-[#2563EB] bg-[#2563EB]/10 hover:bg-[#2563EB] hover:text-white border border-[#2563EB]/20 p-1.5 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed"><Plus className="w-4 h-4" /></button>
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
             {!selectedChapter ? (
               <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs font-medium">
-                <Layers className="w-12 h-12 mb-3 opacity-10 text-slate-400" />
-                <p>Select a Chapter first</p>
+                <Layers className="w-12 h-12 mb-3 opacity-10 text-slate-400" /> <p>Select a Chapter first</p>
               </div>
-            ) : (
-              topics.map(topic => (
-                <div key={topic.id} className="p-4 rounded-2xl bg-transparent hover:bg-[#1E293B]/40 border border-transparent hover:border-[#1E293B] flex justify-between items-center transition-all duration-200 group relative">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="w-5 h-5 rounded-md bg-[#2563EB]/10 border border-[#2563EB]/20 text-[#2563EB] flex items-center justify-center text-[10px] font-black">{topic.topic_order}</span>
-                      <span className="text-[10px] font-bold text-slate-500 tracking-widest">
-                        {Array(topic.importance_stars).fill('★').join('')}
-                      </span>
-                    </div>
-                    <div className="font-bold text-slate-200 text-sm group-hover:text-white transition-colors">{topic.title}</div>
+            ) : topics.map(topic => (
+              <div key={topic.id} className="p-4 rounded-2xl bg-transparent hover:bg-[#1E293B]/40 border border-transparent hover:border-[#1E293B] flex justify-between items-center transition-all duration-200 group relative">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="w-5 h-5 rounded-md bg-[#2563EB]/10 border border-[#2563EB]/20 text-[#2563EB] flex items-center justify-center text-[10px] font-black">{topic.topic_order}</span>
+                    <span className="text-[10px] font-bold text-slate-500 tracking-widest">{Array(topic.importance_stars).fill('★').join('')}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={(e) => handleDeleteTopic(e, topic.id)} className="p-2 text-slate-500 bg-transparent hover:text-rose-400 hover:bg-rose-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200"><Trash2 className="w-4 h-4" /></button>
-                  </div>
+                  <div className="font-bold text-slate-200 text-sm group-hover:text-white transition-colors">{topic.title}</div>
                 </div>
-              ))
-            )}
+                <button onClick={(e) => handleDeleteTopic(e, topic.id)} className="p-2 text-slate-500 bg-transparent hover:text-rose-400 hover:bg-rose-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200"><Trash2 className="w-4 h-4" /></button>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -342,41 +293,93 @@ export default function Taxonomy() {
             
             <form onSubmit={handleModalSubmit} className="p-6 space-y-5">
               
-              {/* SUBJECT FIELDS (Same as before) ... */}
-              
-              {/* 🚀 NEW CHAPTER FIELDS */}
-              {modal.type === 'chapter' && (
+              {/* SUBJECT FIELDS */}
+              {modal.type === 'subject' && (
                 <>
+                  <div>
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Subject Name</label>
+                    <input type="text" required autoFocus placeholder="e.g. Higher Math" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" onChange={(e) => setFormData({...formData, name: e.target.value})} />
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Chapter Label</label>
-                      <input type="text" required autoFocus placeholder="e.g. 11.1 or গল্প ১" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" onChange={(e) => setFormData({...formData, chapterLabel: e.target.value})} />
+                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Class Level</label>
+                      <select className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none shadow-inner text-sm font-medium" onChange={(e) => setFormData({...formData, classLevel: e.target.value})}>
+                        <option value="SSC">SSC</option>
+                        <option value="HSC">HSC</option>
+                        <option value="Admission">Admission</option>
+                      </select>
                     </div>
                     <div>
-                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Section (Optional)</label>
-                      <input type="text" placeholder="e.g. গদ্য, পদ্য, বীজগণিত" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" onChange={(e) => setFormData({...formData, sectionName: e.target.value})} />
+                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Group</label>
+                      <select className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none shadow-inner text-sm font-medium" onChange={(e) => setFormData({...formData, boardGroup: e.target.value})}>
+                        <option value="Science">Science</option>
+                        <option value="Arts">Arts</option>
+                        <option value="Commerce">Commerce</option>
+                        <option value="General">General</option>
+                      </select>
                     </div>
                   </div>
-                  
-                  <div>
-                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Parent Chapter (Optional)</label>
-                    <select className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-300 font-medium outline-none shadow-inner text-sm" onChange={(e) => setFormData({...formData, parentChapterId: e.target.value})}>
-                      <option value="">None (It's a Main Chapter)</option>
-                      {/* শুধুমাত্র মেইন চ্যাপ্টারগুলো ড্রপডাউনে দেখাবে */}
-                      {chapters.filter(c => !c.parent_chapter_id).map(c => (
-                        <option key={c.id} value={c.id}>{c.title}</option>
-                      ))}
-                    </select>
+                </>
+              )}
+              
+              {/* 🚀 UPGRADED UX: CHAPTER FIELDS WITH HYBRID INPUT & CHIPS */}
+              {modal.type === 'chapter' && (
+                <>
+                  <div className="flex bg-[#07090E] p-1.5 rounded-xl border border-[#1E293B] shadow-inner mb-2">
+                    <button type="button" onClick={() => setFormData({...formData, isSubChapter: false, parentChapterId: null})} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${!formData.isSubChapter ? 'bg-[#2563EB] text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Main Chapter</button>
+                    <button type="button" onClick={() => setFormData({...formData, isSubChapter: true, sectionName: ''})} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${formData.isSubChapter ? 'bg-[#2563EB] text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Sub-Chapter</button>
                   </div>
 
-                  <div>
-                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Chapter Title</label>
-                    <input type="text" required placeholder="e.g. স্থানাঙ্ক জ্যামিতি" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" onChange={(e) => setFormData({...formData, title: e.target.value})} />
+                  {!formData.isSubChapter ? (
+                    <div className="bg-[#07090E]/50 p-4 rounded-xl border border-[#1E293B]">
+                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Section Group (Optional)</label>
+                      {/* 🚀 Hybrid Text Input */}
+                      <input 
+                        type="text" 
+                        placeholder="e.g. গদ্য, পদ্য, বীজগণিত..." 
+                        className="w-full p-3.5 bg-[#0B0F19] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600 mb-3" 
+                        value={formData.sectionName || ''} 
+                        onChange={(e) => setFormData({...formData, sectionName: e.target.value})} 
+                      />
+                      {/* 🚀 Suggestion Chips for 1-Click Select */}
+                      <div className="flex flex-wrap gap-2">
+                        {['গদ্য', 'পদ্য', 'উপন্যাস', 'নাটক', 'বীজগণিত', 'জ্যামিতি', 'ত্রিকোণমিতি', 'পরিসংখ্যান'].map(chip => (
+                          <button 
+                            key={chip} type="button" 
+                            onClick={() => setFormData({...formData, sectionName: chip})}
+                            className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all border ${formData.sectionName === chip ? 'bg-[#2563EB]/20 border-[#2563EB] text-[#2563EB]' : 'bg-[#0B0F19] border-[#1E293B] text-slate-400 hover:border-slate-500 hover:text-slate-200'}`}
+                          >
+                            {chip}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Parent Chapter</label>
+                      <select required className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-300 font-medium outline-none shadow-inner text-sm" value={formData.parentChapterId || ''} onChange={(e) => setFormData({...formData, parentChapterId: e.target.value})}>
+                        <option value="" disabled>Select Main Chapter...</option>
+                        {chapters.filter(c => !c.parent_chapter_id).map(c => (
+                          <option key={c.id} value={c.id}>{c.title}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-1">
+                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Chapter Label</label>
+                      <input type="text" required placeholder={formData.isSubChapter ? "e.g. 11.1" : "e.g. 11 or গল্প ১"} className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" onChange={(e) => setFormData({...formData, chapterLabel: e.target.value})} />
+                    </div>
+                    <div className="col-span-1">
+                      <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Chapter Title</label>
+                      <input type="text" required placeholder="e.g. স্থানাঙ্ক জ্যামিতি" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" onChange={(e) => setFormData({...formData, title: e.target.value})} />
+                    </div>
                   </div>
                 </>
               )}
 
-              {/* TOPIC FIELDS (Same as before) ... */}
+              {/* TOPIC FIELDS */}
               {modal.type === 'topic' && (
                 <>
                   <div className="grid grid-cols-2 gap-4">

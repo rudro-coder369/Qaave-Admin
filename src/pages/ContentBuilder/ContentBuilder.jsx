@@ -139,18 +139,22 @@ export default function ContentBuilder() {
     }
   };
 
-  // 🚀 Helper Function to Group Chapters for the Dropdown
+  // 🚀 REFINED: Helper Function to Group Chapters for the Dropdown
   const renderChapterOptions = () => {
     const mainChapters = chapters.filter(c => !c.parent_chapter_id);
     
     return mainChapters.map(mainChap => {
       const subChapters = chapters.filter(c => c.parent_chapter_id === mainChap.id);
+      const sectionPrefix = mainChap.section_name ? `[${mainChap.section_name}] ` : '';
+      
       return (
-        <optgroup key={mainChap.id} label={`${mainChap.section_name ? `[${mainChap.section_name}] ` : ''}${mainChap.chapter_label || 'CH'}: ${mainChap.title}`}>
-          <option value={mainChap.id}>• {mainChap.title} (Main)</option>
+        <optgroup key={mainChap.id} label={`${sectionPrefix}${mainChap.chapter_label || 'CH'}: ${mainChap.title}`}>
+          <option value={mainChap.id} className="text-slate-200 bg-[#07090E]">
+            • {mainChap.title} (Main)
+          </option>
           {subChapters.map(subChap => (
-            <option key={subChap.id} value={subChap.id}>
-              ↳ {subChap.chapter_label || 'Sub'}: {subChap.title}
+            <option key={subChap.id} value={subChap.id} className="text-blue-300 bg-[#0B0F19] font-medium">
+              &nbsp;&nbsp;&nbsp;↳ {subChap.chapter_label || 'Sub'}: {subChap.title}
             </option>
           ))}
         </optgroup>
@@ -190,7 +194,7 @@ export default function ContentBuilder() {
             value={selectedChap} onChange={(e) => setSelectedChap(e.target.value)} disabled={!selectedSub}
           >
             <option value="">2. Select Chapter</option>
-            {/* 🚀 Using the new grouped rendering */}
+            {/* 🚀 Using the grouped rendering */}
             {renderChapterOptions()}
           </select>
 

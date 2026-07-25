@@ -30,16 +30,33 @@ export const taxonomyApi = {
 
   // ================= CHAPTERS =================
   getChapters: async (subjectId) => {
-    const { data, error } = await supabase.from('chapters').select('*').eq('subject_id', subjectId).order('chapter_number', { ascending: true });
+    // 🚀 Update: Ordered by created_at so main chapters and sub-chapters stay in logical insertion sequence
+    const { data, error } = await supabase.from('chapters')
+      .select('*')
+      .eq('subject_id', subjectId)
+      .order('created_at', { ascending: true });
     if (error) throw error;
     return data;
   },
 
-  addChapter: async (subjectId, chapterNumber, title) => {
+  // 🚀 Update: Now accepts an object to match the frontend and includes the new columns
+  addChapter: async ({ subject_id, chapter_label, title, section_name, parent_chapter_id }) => {
     const slug = generateSlug(title) + '-' + Date.now().toString().slice(-4);
+    
+    // 🚀 Fallback Logic: Extract number from chapter_label (e.g. "11.1" -> 11, "গল্প ১" -> 1) to satisfy old chapter_number INT NOT NULL constraint
+    const parsedNumber = parseInt(chapter_label.replace(/[^0-9]/g, '')) || 0;
+
     const { data, error } = await supabase.from('chapters').insert([{
-      subject_id: subjectId, chapter_number: chapterNumber, title, slug, status: 'published'
+      subject_id: subject_id,
+      chapter_number: parsedNumber,       // Legacy NOT NULL field
+      chapter_label: chapter_label,       // New field (e.g. 11.1, গল্প ১)
+      title: title,
+      slug: slug,
+      section_name: section_name || null, // New field
+      parent_chapter_id: parent_chapter_id || null, // New field
+      status: 'published'
     }]).select();
+    
     if (error) throw error;
     return data[0];
   },

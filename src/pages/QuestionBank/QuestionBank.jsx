@@ -157,6 +157,25 @@ export default function QuestionBank() {
     }
   };
 
+  // 🚀 Helper Function to Group Chapters for the Dropdown
+  const renderChapterOptions = () => {
+    const mainChapters = chapters.filter(c => !c.parent_chapter_id);
+    
+    return mainChapters.map(mainChap => {
+      const subChapters = chapters.filter(c => c.parent_chapter_id === mainChap.id);
+      return (
+        <optgroup key={mainChap.id} label={`${mainChap.section_name ? `[${mainChap.section_name}] ` : ''}${mainChap.chapter_label || 'CH'}: ${mainChap.title}`}>
+          <option value={mainChap.id}>• {mainChap.title} (Main)</option>
+          {subChapters.map(subChap => (
+            <option key={subChap.id} value={subChap.id}>
+              ↳ {subChap.chapter_label || 'Sub'}: {subChap.title}
+            </option>
+          ))}
+        </optgroup>
+      );
+    });
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-100px)] text-slate-200">
       <Toaster position="top-right" toastOptions={{ style: { background: '#0B0F19', color: '#F1F5F9', border: '1px solid #1E293B' } }} />
@@ -177,10 +196,13 @@ export default function QuestionBank() {
             <option value="">1. Select Subject</option>
             {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
+          
+          {/* 🚀 Updated Chapter Select with Grouping */}
           <select className="flex-1 p-3 bg-[#07090E] border border-[#1E293B] rounded-xl focus:ring-2 focus:ring-[#2563EB] outline-none shadow-inner disabled:opacity-40 text-xs font-bold text-slate-300 transition-all" value={selectedChap} onChange={(e) => setSelectedChap(e.target.value)} disabled={!selectedSub}>
             <option value="">2. Select Chapter</option>
-            {chapters.map(c => <option key={c.id} value={c.id}>Ch {c.chapter_number}: {c.title}</option>)}
+            {renderChapterOptions()}
           </select>
+          
           <select className="flex-1 p-3 bg-[#2563EB]/5 border border-[#2563EB]/20 rounded-xl focus:ring-2 focus:ring-[#2563EB] outline-none shadow-inner disabled:opacity-40 text-xs font-black text-[#2563EB] transition-all" value={selectedTop} onChange={(e) => setSelectedTop(e.target.value)} disabled={!selectedChap}>
             <option value="" className="bg-[#07090E] text-slate-400">3. Topic (Optional)</option>
             {topics.map(t => <option key={t.id} value={t.id} className="bg-[#07090E]">{t.topic_order}. {t.title}</option>)}

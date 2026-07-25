@@ -4,9 +4,9 @@
 
 @layer base {
   :root {
-    --bg-main: #07090E;      /* Primary Base Background */
-    --bg-card: #0B0F19;      /* Secondary Surface / Card Background */
-    --border-color: #1E293B; /* Secondary Slate Border */
+    --bg-main: #080808;      /* Primary Base Background */
+    --bg-card: #323233;      /* Secondary Surface / Card Background */
+    --border-color: #1a1b1d; /* Secondary Slate Border */
     --accent-blue: #2563EB;  /* The ONLY Accent Blue */
   }
 

@@ -28,7 +28,8 @@ export default function ContentBuilder() {
   const [qaPair, setQaPair] = useState({ question: '', answer: '' });
   const [bulletPoints, setBulletPoints] = useState(['', '']);
 
-  const blockTypes = ['definition', 'concept', 'example', 'formula', 'diagram', 'note', 'warning', 'shortcut', 'bullet_points', 'qa_pair'];
+  // 🚀 UPDATED: Synced with your Database ENUM + UI Types
+  const blockTypes = ['definition', 'concept', 'example', 'formula', 'diagram', 'note', 'warning', 'shortcut', 'exercise', 'instant_mcq', 'cq_suggestion', 'bullet_points', 'qa_pair'];
 
   useEffect(() => {
     taxonomyApi.getSubjects().then(setSubjects).catch(err => toast.error(err.message));
@@ -138,8 +139,26 @@ export default function ContentBuilder() {
     }
   };
 
+  // 🚀 Helper Function to Group Chapters for the Dropdown
+  const renderChapterOptions = () => {
+    const mainChapters = chapters.filter(c => !c.parent_chapter_id);
+    
+    return mainChapters.map(mainChap => {
+      const subChapters = chapters.filter(c => c.parent_chapter_id === mainChap.id);
+      return (
+        <optgroup key={mainChap.id} label={`${mainChap.section_name ? `[${mainChap.section_name}] ` : ''}${mainChap.chapter_label || 'CH'}: ${mainChap.title}`}>
+          <option value={mainChap.id}>• {mainChap.title} (Main)</option>
+          {subChapters.map(subChap => (
+            <option key={subChap.id} value={subChap.id}>
+              ↳ {subChap.chapter_label || 'Sub'}: {subChap.title}
+            </option>
+          ))}
+        </optgroup>
+      );
+    });
+  };
+
   return (
-    // Fixed height layout to enable internal scrolling
     <div className="flex flex-col h-[calc(100vh-100px)] text-slate-200">
       <Toaster position="top-right" 
         toastOptions={{ style: { background: '#0B0F19', color: '#F1F5F9', border: '1px solid #1E293B' } }} 
@@ -171,7 +190,8 @@ export default function ContentBuilder() {
             value={selectedChap} onChange={(e) => setSelectedChap(e.target.value)} disabled={!selectedSub}
           >
             <option value="">2. Select Chapter</option>
-            {chapters.map(c => <option key={c.id} value={c.id}>Ch {c.chapter_number}: {c.title}</option>)}
+            {/* 🚀 Using the new grouped rendering */}
+            {renderChapterOptions()}
           </select>
 
           <select 

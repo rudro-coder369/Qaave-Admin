@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-main: #07090E;      /* Primary Base Background */
+    --bg-card: #0B0F19;      /* Secondary Surface / Card Background */
+    --border-color: #1E293B; /* Secondary Slate Border */
+    --accent-blue: #2563EB;  /* The ONLY Accent Blue */
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: #F1F5F9;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Force Permanent Blue Focus & Selections (No Green/Yellow allowed) */
+::selection {
+  background-color: #2563EB;
+  color: #FFFFFF;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: #2563EB !important;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2) !important;
+}
+
+/* Custom Clean Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #07090E;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #1E293B;
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #2563EB;
+}

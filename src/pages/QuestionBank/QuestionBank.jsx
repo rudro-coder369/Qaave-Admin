@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { taxonomyApi } from '../../services/taxonomyService';
 import { questionService } from '../../services/questionService';
 import toast, { Toaster } from 'react-hot-toast';
-import { Plus, Zap, Image as ImageIcon, Trash2, HelpCircle, BookOpen, Search, CheckCircle2, Layers, X, PlusCircle, Loader2, AlignLeft, Settings, CheckSquare } from 'lucide-react';
+import * as XLSX from 'xlsx'; // 🚀 Excel Library Imported
+import { Plus, Zap, Image as ImageIcon, Trash2, BookOpen, Search, CheckCircle2, Layers, X, PlusCircle, Loader2, AlignLeft, Settings, CheckSquare, Download, UploadCloud } from 'lucide-react';
 
 export default function QuestionBank() {
   const [subjects, setSubjects] = useState([]);
@@ -35,24 +36,20 @@ export default function QuestionBank() {
     { text: '', isCorrect: false }, { text: '', isCorrect: false }
   ]);
   
+  // 🚀 FIX: Removed Explanation from CQ Parts
   const [cqParts, setCqParts] = useState([
-    { label: 'k', qText: '', aText: '', explanation: '' }, 
-    { label: 'kh', qText: '', aText: '', explanation: '' },
-    { label: 'g', qText: '', aText: '', explanation: '' }, 
-    { label: 'gh', qText: '', aText: '', explanation: '' }
+    { label: 'k', qText: '', aText: '' }, 
+    { label: 'kh', qText: '', aText: '' },
+    { label: 'g', qText: '', aText: '' }, 
+    { label: 'gh', qText: '', aText: '' }
   ]);
 
   useEffect(() => { 
     taxonomyApi.getSubjects().then(setSubjects).catch(err => toast.error(err.message));
     
     questionService.getBoards()
-      .then(data => {
-        setBoards(data);
-      })
-      .catch(err => {
-        console.error("Board Fetch Error:", err);
-        toast.error("Failed to load Boards: " + err.message);
-      });
+      .then(data => setBoards(data))
+      .catch(err => toast.error("Failed to load Boards: " + err.message));
   }, []);
   
   useEffect(() => {
@@ -99,9 +96,7 @@ export default function QuestionBank() {
   const addBoardTag = () => setBoardTags(prev => [...prev, { boardId: '', year: '' }]);
   
   const updateBoardTag = (index, field, value) => {
-    setBoardTags(prevTags => 
-      prevTags.map((tag, i) => (i === index ? { ...tag, [field]: value } : tag))
-    );
+    setBoardTags(prevTags => prevTags.map((tag, i) => (i === index ? { ...tag, [field]: value } : tag)));
   };
   
   const removeBoardTag = (index) => {
@@ -141,9 +136,9 @@ export default function QuestionBank() {
       setNewQ({ text: '', imagePath: '', explanation: '', solution: '', importance: 3, isExamMaterial: false, isContentMaterial: false });
       setBoardTags([]);
       setOptions([{ text: '', isCorrect: true }, { text: '', isCorrect: false }, { text: '', isCorrect: false }, { text: '', isCorrect: false }]);
-      setCqParts([{ label: 'k', qText: '', aText: '', explanation: '' }, { label: 'kh', qText: '', aText: '', explanation: '' }, { label: 'g', qText: '', aText: '', explanation: '' }, { label: 'gh', qText: '', aText: '', explanation: '' }]);
+      // 🚀 FIX: Reset matched the new CQ Parts State
+      setCqParts([{ label: 'k', qText: '', aText: '' }, { label: 'kh', qText: '', aText: '' }, { label: 'g', qText: '', aText: '' }, { label: 'gh', qText: '', aText: '' }]);
       
-      // Refresh list
       const freshQuestions = await questionService.getQuestions(selectedChap, selectedTop || null);
       setQuestions(freshQuestions);
 
@@ -154,7 +149,147 @@ export default function QuestionBank() {
     }
   };
 
-  // 🚀 REFINED: Helper Function to Group Chapters for the Dropdown (Matches ContentBuilder)
+  // ==========================================
+  // 🚀 1. EXCEL TEMPLATE GENERATOR (4 Types - Cleaned CQ)
+  // ==========================================
+  const downloadSpecificTemplate = (type) => {
+    let templateData = [];
+    let fileName = "";
+
+    if (type === 'mcq') {
+      templateData = [{
+        Type: "mcq", Question_Stem: "নিচের কোনটি ভেক্টর রাশি?", Image_URL: "",
+        Importance_1_to_5: 5, Is_Exam_Material: "TRUE", Is_Content_Material: "TRUE",
+        Option_A: "কাজ", Option_B: "তাপমাত্রা", Option_C: "বেগ", Option_D: "দ্রুতি",
+        Correct_Option_ABCD: "C", Explanation: "বেগের মান ও দিক উভয়ই আছে।",
+        Board_Tags: "Dhaka-2023, Comilla-2022" 
+      }];
+      fileName = "Qaave_MCQ_Template.xlsx";
+    } 
+    else if (type === 'sq1') {
+      templateData = [{
+        Type: "sq", Question_Stem: "বলবিদ্যা কাকে বলে?", Image_URL: "", 
+        Importance_1_to_5: 3, Is_Exam_Material: "FALSE", Is_Content_Material: "TRUE",
+        Exact_Solution: "পদার্থবিজ্ঞানের যে শাখায় বল ও বস্তুর গতির সম্পর্ক নিয়ে আলোচনা করা হয়, তাকে বলবিদ্যা বলে।",
+        Board_Tags: "Rajshahi-2021"
+      }];
+      fileName = "Qaave_SQ_1_Mark_Template.xlsx";
+    }
+    else if (type === 'sq2') {
+      templateData = [{
+        Type: "written", Question_Stem: "গাড়ির টায়ার খাঁজকাটা থাকে কেন? ব্যাখ্যা করো।", Image_URL: "", 
+        Importance_1_to_5: 4, Is_Exam_Material: "TRUE", Is_Content_Material: "TRUE",
+        Exact_Solution: "ঘর্ষণ বল বৃদ্ধি করার জন্য। খাঁজকাটা থাকলে রাস্তার সাথে টায়ারের গ্রিপ ভালো হয়...",
+        Board_Tags: "Sylhet-2023"
+      }];
+      fileName = "Qaave_SQ_2_Marks_Template.xlsx";
+    }
+    else if (type === 'cq') {
+      templateData = [{
+        Type: "cq", Stem_Text: "একটি গাড়ি স্থির অবস্থান থেকে 2 m/s² সুষম ত্বরণে চলতে শুরু করল। (উদ্দীপক)", Image_URL: "https://example.com/car.jpg", 
+        Importance_1_to_5: 4, Is_Exam_Material: "TRUE", Is_Content_Material: "FALSE",
+        Q_K: "ত্বরণ কাকে বলে?", Ans_K: "সময়ের সাথে বেগ বৃদ্ধির হারকে ত্বরণ বলে।",
+        Q_Kh: "সুষম ত্বরণ কী?", Ans_Kh: "বেগ নির্দিষ্ট দিকে সমান হারে বাড়লে তাকে সুষম ত্বরণ বলে।",
+        Q_G: "5 সেকেন্ডে কত দূরত্ব অতিক্রম করবে?", Ans_G: "25 মিটার (s = ut + 0.5 * a * t^2)",
+        Q_Gh: "গ্রাফটি বিশ্লেষণ করো।", Ans_Gh: "মূলবিন্দুগামী সরলরেখা হবে যা সুষম ত্বরণ নির্দেশ করে।",
+        Board_Tags: "Cadet College-2024"
+      }];
+      fileName = "Qaave_CQ_Template.xlsx";
+    }
+
+    const worksheet = XLSX.utils.json_to_sheet(templateData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Questions");
+    XLSX.writeFile(workbook, fileName);
+    toast.success(`${fileName} Downloaded!`);
+  };
+
+  // ==========================================
+  // 🚀 2. SMART EXCEL UPLOAD (Cleaned CQ Parsing)
+  // ==========================================
+  const handleExcelUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!selectedChap) return toast.error("Please select Subject & Chapter from UI first!");
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        setIsSavingQuestion(true);
+        toast.loading(`Uploading to selected path...`, { id: "excel-upload" });
+        
+        const bstr = evt.target.result;
+        const workbook = XLSX.read(bstr, { type: 'binary' });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rawData = XLSX.utils.sheet_to_json(worksheet);
+
+        let successCount = 0;
+
+        for (const row of rawData) {
+          const qType = String(row.Type || 'mcq').toLowerCase().trim();
+
+          // 🧠 Board Tag Parsing
+          let validBoardTags = [];
+          if (row.Board_Tags) {
+            validBoardTags = String(row.Board_Tags).split(',').map(tag => {
+              const [boardName, year] = tag.trim().split('-');
+              if(!boardName || !year) return null;
+              const foundBoard = boards.find(b => b.short_name?.toLowerCase() === boardName.toLowerCase() || b.name?.toLowerCase() === boardName.toLowerCase());
+              return { boardId: foundBoard?.id || '', year: parseInt(year) };
+            }).filter(b => b && b.boardId && b.year);
+          }
+
+          // 🧠 MCQ Parsing
+          const optionsArray = qType === 'mcq' ? [
+            { text: String(row.Option_A || ''), isCorrect: String(row.Correct_Option_ABCD).trim().toUpperCase() === 'A' },
+            { text: String(row.Option_B || ''), isCorrect: String(row.Correct_Option_ABCD).trim().toUpperCase() === 'B' },
+            { text: String(row.Option_C || ''), isCorrect: String(row.Correct_Option_ABCD).trim().toUpperCase() === 'C' },
+            { text: String(row.Option_D || ''), isCorrect: String(row.Correct_Option_ABCD).trim().toUpperCase() === 'D' }
+          ] : null;
+
+          // 🧠 CQ Parsing (Cleaned up Explanation)
+          const cqParts = qType === 'cq' ? [
+            { label: 'k', qText: row.Q_K || '', aText: row.Ans_K || '' },
+            { label: 'kh', qText: row.Q_Kh || '', aText: row.Ans_Kh || '' },
+            { label: 'g', qText: row.Q_G || '', aText: row.Ans_G || '' },
+            { label: 'gh', qText: row.Q_Gh || '', aText: row.Ans_Gh || '' }
+          ] : null;
+
+          // 🧠 Batch Insert
+          await questionService.addQuestion({
+            subjectId: selectedSub,
+            chapterId: selectedChap,
+            topicId: selectedTop || null,
+            qType: qType,
+            text: row.Question_Stem || row.Stem_Text || '',
+            imagePath: row.Image_URL || null,
+            explanation: row.Explanation || '',
+            solution: ['sq', 'written'].includes(qType) ? (row.Exact_Solution || '') : '',
+            importance: parseInt(row.Importance_1_to_5) || 3,
+            isExamMaterial: String(row.Is_Exam_Material).toUpperCase() === 'TRUE',
+            isContentMaterial: String(row.Is_Content_Material).toUpperCase() === 'TRUE',
+            optionsArray,
+            cqParts,
+            boardTags: validBoardTags
+          });
+
+          successCount++;
+        }
+
+        toast.success(`Successfully imported ${successCount} questions!`, { id: "excel-upload" });
+        const freshQuestions = await questionService.getQuestions(selectedChap, selectedTop || null);
+        setQuestions(freshQuestions);
+
+      } catch (err) {
+        toast.error("Import failed: " + err.message, { id: "excel-upload" });
+      } finally {
+        setIsSavingQuestion(false);
+        e.target.value = null; // Reset File Input
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
   const renderChapterOptions = () => {
     const mainChapters = chapters.filter(c => !c.parent_chapter_id);
     
@@ -182,13 +317,38 @@ export default function QuestionBank() {
       <Toaster position="top-right" toastOptions={{ style: { background: '#0B0F19', color: '#F1F5F9', border: '1px solid #1E293B' } }} />
       
       <div className="bg-[#0B0F19] p-4 rounded-2xl border border-[#1E293B] mb-4 flex flex-col lg:flex-row items-center justify-between gap-4 shrink-0 shadow-lg">
-        <div className="flex items-center gap-3 w-full lg:w-auto">
-          <div className="p-2.5 bg-[#2563EB]/10 border border-[#2563EB]/20 rounded-xl shadow-inner">
-            <Layers className="w-5 h-5 text-[#2563EB]" />
+        
+        {/* Title and Bulk Actions Container */}
+        <div className="flex items-center justify-between w-full lg:w-auto">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-[#2563EB]/10 border border-[#2563EB]/20 rounded-xl shadow-inner">
+              <Layers className="w-5 h-5 text-[#2563EB]" />
+            </div>
+            <div>
+              <h1 className="text-xl font-black text-white tracking-tight leading-none">Question Bank</h1>
+              <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest mt-1">Content Team Workspace</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-black text-white tracking-tight leading-none">Question Bank</h1>
-            <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest mt-1">Content Team Workspace</p>
+
+          {/* 🚀 BULK ACTION BUTTONS (Download 4 Templates & Upload) */}
+          <div className="hidden lg:flex ml-6 gap-2 items-center">
+            <select 
+              onChange={(e) => { 
+                if(e.target.value) { downloadSpecificTemplate(e.target.value); e.target.value = ''; }
+              }}
+              className="px-3 py-2 bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-inner outline-none cursor-pointer"
+            >
+              <option value="">📥 Get Template</option>
+              <option value="mcq">MCQ Template</option>
+              <option value="sq1">SQ (1 Mark) Template</option>
+              <option value="sq2">SQ (2 Marks) Template</option>
+              <option value="cq">CQ (Creative) Template</option>
+            </select>
+
+            <label htmlFor="excel-upload" className={`cursor-pointer flex items-center gap-1.5 px-3 py-2 ${!selectedChap ? 'bg-slate-800/50 text-slate-600 border-slate-800 cursor-not-allowed' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500 hover:text-white'} border rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-inner`}>
+              <UploadCloud className="w-3.5 h-3.5" /> Upload Data
+              <input type="file" id="excel-upload" accept=".xlsx, .xls" className="hidden" onChange={handleExcelUpload} disabled={!selectedChap || isSavingQuestion} />
+            </label>
           </div>
         </div>
 
@@ -198,7 +358,6 @@ export default function QuestionBank() {
             {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           
-          {/* 🚀 Updated Chapter Select with Grouping */}
           <select className="flex-1 p-3 bg-[#07090E] border border-[#1E293B] rounded-xl focus:ring-2 focus:ring-[#2563EB] outline-none shadow-inner disabled:opacity-40 text-xs font-bold text-slate-300 transition-all" value={selectedChap} onChange={(e) => setSelectedChap(e.target.value)} disabled={!selectedSub}>
             <option value="">2. Select Chapter</option>
             {renderChapterOptions()}
@@ -280,13 +439,13 @@ export default function QuestionBank() {
                       </div>
                     )}
 
+                    {/* 🚀 FIX: Display logic matching new CQ structure without explanation */}
                     {q.q_type === 'cq' && (
                       <div className="mt-2 space-y-3 bg-[#0B0F19] p-4 rounded-xl border border-[#1E293B]">
                         {q.cq_parts?.map(p => (
                           <div key={p.id} className="flex flex-col gap-1 pb-3 border-b border-[#1E293B] last:border-0 last:pb-0">
                             <div className="text-xs text-slate-200 font-bold flex gap-2"><span className="text-[#2563EB]">({p.label})</span> {p.question_text}</div>
                             {p.answer_text && <div className="pl-6 text-xs text-slate-400 font-medium mt-1"><span className="text-emerald-400 font-bold mr-1">Ans:</span> {p.answer_text}</div>}
-                            {p.explanation && <div className="pl-6 text-[11px] text-slate-500 italic mt-0.5"><span className="text-[#2563EB] font-bold not-italic mr-1">Exp:</span> {p.explanation}</div>}
                           </div>
                         ))}
                       </div>
@@ -364,6 +523,7 @@ export default function QuestionBank() {
                   </div>
                 )}
 
+                {/* 🚀 FIX: Removed the secondary explanation textarea from CQ input form */}
                 {qType === 'cq' && (
                   <div className="space-y-4">
                     {cqParts.map((part, idx) => (
@@ -374,7 +534,6 @@ export default function QuestionBank() {
                         </div>
                         <div className="pl-11 space-y-2">
                           <textarea required className="w-full p-2.5 text-xs bg-[#07090E] border border-[#1E293B] rounded-lg focus:ring-1 focus:ring-emerald-500/50 outline-none text-emerald-100 placeholder-slate-600 resize-none shadow-inner" rows="2" placeholder="Main Answer..." value={part.aText} onChange={(e) => setCqParts(cqParts.map((p, i) => i === idx ? {...p, aText: e.target.value} : p))}></textarea>
-                          <textarea className="w-full p-2.5 text-xs bg-[#07090E] border border-[#1E293B] rounded-lg focus:ring-1 focus:ring-[#2563EB] outline-none text-slate-300 placeholder-slate-600 resize-none shadow-inner" rows="1" placeholder="Detailed Logic/Explanation (Optional)..." value={part.explanation} onChange={(e) => setCqParts(cqParts.map((p, i) => i === idx ? {...p, explanation: e.target.value} : p))}></textarea>
                         </div>
                       </div>
                     ))}
@@ -398,7 +557,6 @@ export default function QuestionBank() {
                       {boardTags.map((tag, idx) => (
                         <div key={idx} className="flex items-center gap-2 bg-[#0B0F19] p-1.5 rounded-xl border border-[#1E293B]">
                           
-                          {/* 🚀 FIX: Cadet Grouping */}
                           <select className="flex-1 p-2 bg-transparent text-xs outline-none font-medium text-slate-200" value={tag.boardId} onChange={(e) => updateBoardTag(idx, 'boardId', e.target.value)}>
                             <option value="" className="bg-[#0B0F19]">Select Board / Cadet</option>
                             

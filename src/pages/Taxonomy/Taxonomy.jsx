@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { taxonomyApi } from '../../services/taxonomyService';
 import toast, { Toaster } from 'react-hot-toast';
-import { Folder, FileText, Bookmark, Plus, ChevronRight, X, LayoutGrid, Layers, CheckCircle2, Trash2, CornerDownRight, Pencil } from 'lucide-react'; // 🚀 Added Pencil Icon
+import { Folder, FileText, Bookmark, Plus, ChevronRight, X, LayoutGrid, Layers, CheckCircle2, Trash2, CornerDownRight, Pencil } from 'lucide-react';
 
 export default function Taxonomy() {
   const [subjects, setSubjects] = useState([]);
@@ -15,7 +15,7 @@ export default function Taxonomy() {
   // Modal State
   const [modal, setModal] = useState({ isOpen: false, type: '' });
   const [formData, setFormData] = useState({});
-  const [editingId, setEditingId] = useState(null); // 🚀 NEW: Track editing item
+  const [editingId, setEditingId] = useState(null);
 
   useEffect(() => {
     fetchSubjects();
@@ -24,7 +24,7 @@ export default function Taxonomy() {
   const fetchSubjects = async () => {
     try {
       const data = await taxonomyApi.getSubjects();
-      setSubjects(data);
+      setSubjects(data || []);
     } catch (error) {
       toast.error(error.message);
     }
@@ -36,7 +36,7 @@ export default function Taxonomy() {
     setTopics([]);
     try {
       const data = await taxonomyApi.getChapters(subject.id);
-      setChapters(data);
+      setChapters(data || []);
     } catch (error) {
       toast.error(error.message);
     }
@@ -46,22 +46,38 @@ export default function Taxonomy() {
     setSelectedChapter(chapter);
     try {
       const data = await taxonomyApi.getTopics(chapter.id);
-      setTopics(data);
+      setTopics(data || []);
     } catch (error) {
       toast.error(error.message);
     }
   };
 
-  // 🚀 UPDATED: openModal now accepts an item to edit
+  // 🚀 UPDATED: Populates data for Subject, Chapter, and Topic when editing
   const openModal = (type, item = null) => {
     setEditingId(item ? item.id : null);
     
-    if (type === 'subject' && item) {
-      setFormData({
-        name: item.name,
-        classLevel: item.class_level,
-        boardGroup: item.board_group
-      });
+    if (item) {
+      if (type === 'subject') {
+        setFormData({
+          name: item.name,
+          classLevel: item.class_level,
+          boardGroup: item.board_group
+        });
+      } else if (type === 'chapter') {
+        setFormData({
+          isSubChapter: !!item.parent_chapter_id,
+          sectionName: item.section_name || '',
+          parentChapterId: item.parent_chapter_id || '',
+          chapterLabel: item.chapter_label || '',
+          title: item.title || ''
+        });
+      } else if (type === 'topic') {
+        setFormData({
+          topicOrder: item.topic_order || '',
+          stars: item.importance_stars || 1,
+          title: item.title || ''
+        });
+      }
     } else {
       setFormData(type === 'chapter' ? { isSubChapter: false } : {});
     }
@@ -76,37 +92,79 @@ export default function Taxonomy() {
     try {
       if (modal.type === 'subject') {
         if (editingId) {
-          // 🚀 UPDATE SUBJECT LOGIC
           const updatedSub = await taxonomyApi.updateSubject(editingId, formData.name, formData.classLevel || 'SSC', formData.boardGroup || 'Science');
-          setSubjects(subjects.map(s => s.id === editingId ? updatedSub : s));
-          
-          // Update selected subject if currently selected
-          if (selectedSubject?.id === editingId) {
-            setSelectedSubject(updatedSub);
+          if (updatedSub && updatedSub.id) {
+            setSubjects(subjects.map(s => s.id === editingId ? updatedSub : s));
+            if (selectedSubject?.id === editingId) setSelectedSubject(updatedSub);
+            toast.success("Subject updated successfully.");
+          } else {
+            await fetchSubjects();
+            toast.error("Update blocked by Database RLS!");
           }
-          toast.success("Subject updated successfully.");
         } else {
-          // ADD SUBJECT LOGIC
           const newSub = await taxonomyApi.addSubject(formData.name, formData.classLevel || 'SSC', formData.boardGroup || 'Science');
-          setSubjects([...subjects, newSub]);
-          toast.success("Subject added successfully.");
+          if (newSub && newSub.id) {
+            setSubjects([...subjects, newSub]);
+            toast.success("Subject added successfully.");
+          } else {
+            await fetchSubjects();
+            toast.error("Insert blocked by Database RLS!");
+          }
         }
       } 
       else if (modal.type === 'chapter') {
-        const newChap = await taxonomyApi.addChapter({
+        const payload = {
           subject_id: selectedSubject.id,
           chapter_label: formData.chapterLabel,
           title: formData.title,
           section_name: formData.isSubChapter ? null : (formData.sectionName || null),
           parent_chapter_id: formData.isSubChapter ? formData.parentChapterId : null
-        });
-        setChapters([...chapters, newChap]);
-        toast.success("Chapter added successfully.");
+        };
+
+        if (editingId) {
+          const updatedChap = await taxonomyApi.updateChapter(editingId, payload);
+          if (updatedChap && updatedChap.id) {
+            setChapters(chapters.map(c => c.id === editingId ? updatedChap : c));
+            toast.success("Chapter updated successfully.");
+          } else {
+            const freshChapters = await taxonomyApi.getChapters(selectedSubject.id);
+            setChapters(freshChapters || []);
+            toast.error("Update blocked by Database RLS!");
+          }
+        } else {
+          const newChap = await taxonomyApi.addChapter(payload);
+          if (newChap && newChap.id) {
+            setChapters([...chapters, newChap]);
+            toast.success("Chapter added successfully.");
+          } else {
+            const freshChapters = await taxonomyApi.getChapters(selectedSubject.id);
+            setChapters(freshChapters || []);
+            toast.error("Insert blocked by Database RLS!");
+          }
+        }
       } 
       else if (modal.type === 'topic') {
-        const newTopic = await taxonomyApi.addTopic(selectedChapter.id, parseInt(formData.topicOrder), formData.title, parseInt(formData.stars || 1));
-        setTopics([...topics, newTopic]);
-        toast.success("Topic added successfully.");
+        if (editingId) {
+          const updatedTopic = await taxonomyApi.updateTopic(editingId, parseInt(formData.topicOrder), formData.title, parseInt(formData.stars || 1));
+          if (updatedTopic && updatedTopic.id) {
+            setTopics(topics.map(t => t.id === editingId ? updatedTopic : t));
+            toast.success("Topic updated successfully.");
+          } else {
+            const freshTopics = await taxonomyApi.getTopics(selectedChapter.id);
+            setTopics(freshTopics || []);
+            toast.error("Update blocked by Database RLS!");
+          }
+        } else {
+          const newTopic = await taxonomyApi.addTopic(selectedChapter.id, parseInt(formData.topicOrder), formData.title, parseInt(formData.stars || 1));
+          if (newTopic && newTopic.id) {
+            setTopics([...topics, newTopic]);
+            toast.success("Topic added successfully.");
+          } else {
+            const freshTopics = await taxonomyApi.getTopics(selectedChapter.id);
+            setTopics(freshTopics || []);
+            toast.error("Insert blocked by Database RLS!");
+          }
+        }
       }
       setModal({ isOpen: false, type: '' });
     } catch (error) {
@@ -215,8 +273,10 @@ export default function Taxonomy() {
         </div>
       </div>
       <div className="flex items-center gap-1">
+        {/* 🚀 EDIT CHAPTER BUTTON */}
+        <button onClick={(e) => { e.stopPropagation(); openModal('chapter', chap); }} className={`p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 ${selectedChapter?.id === chap.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-blue-400 hover:bg-blue-500/10'}`} title="Edit Chapter"><Pencil className="w-4 h-4" /></button>
         <button onClick={(e) => handleDeleteChapter(e, chap.id)} className={`p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 ${selectedChapter?.id === chap.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}`} title="Delete Chapter"><Trash2 className="w-4 h-4" /></button>
-        <ChevronRight className={`w-4 h-4 transition-transform ${selectedChapter?.id === chap.id ? 'opacity-100 translate-x-1' : 'opacity-0 group-hover:opacity-100'}`} />
+        <ChevronRight className={`w-4 h-4 transition-transform ml-1 ${selectedChapter?.id === chap.id ? 'opacity-100 translate-x-1' : 'opacity-0 group-hover:opacity-100'}`} />
       </div>
     </div>
   );
@@ -252,7 +312,6 @@ export default function Taxonomy() {
                   <div className={`text-[10px] mt-1 font-medium uppercase tracking-wider ${selectedSubject?.id === sub.id ? 'text-blue-200' : 'text-slate-500'}`}>{sub.class_level} • {sub.board_group}</div>
                 </div>
                 <div className="flex items-center gap-1">
-                  {/* 🚀 NEW: Edit Button */}
                   <button onClick={(e) => { e.stopPropagation(); openModal('subject', sub); }} className={`p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 ${selectedSubject?.id === sub.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-blue-400 hover:bg-blue-500/10'}`}><Pencil className="w-4 h-4" /></button>
                   <button onClick={(e) => handleDeleteSubject(e, sub.id)} className={`p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 ${selectedSubject?.id === sub.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}`}><Trash2 className="w-4 h-4" /></button>
                   <ChevronRight className={`w-4 h-4 transition-transform ml-1 ${selectedSubject?.id === sub.id ? 'opacity-100 translate-x-1' : 'opacity-0 group-hover:opacity-100'}`} />
@@ -301,7 +360,11 @@ export default function Taxonomy() {
                   </div>
                   <div className="font-bold text-slate-200 text-sm group-hover:text-white transition-colors">{topic.title}</div>
                 </div>
-                <button onClick={(e) => handleDeleteTopic(e, topic.id)} className="p-2 text-slate-500 bg-transparent hover:text-rose-400 hover:bg-rose-500/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200"><Trash2 className="w-4 h-4" /></button>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                  {/* 🚀 EDIT TOPIC BUTTON */}
+                  <button onClick={(e) => { e.stopPropagation(); openModal('topic', topic); }} className="p-2 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-xl"><Pencil className="w-4 h-4" /></button>
+                  <button onClick={(e) => handleDeleteTopic(e, topic.id)} className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl"><Trash2 className="w-4 h-4" /></button>
+                </div>
               </div>
             ))}
           </div>
@@ -396,11 +459,11 @@ export default function Taxonomy() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-1">
                       <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Chapter Label</label>
-                      <input type="text" required placeholder={formData.isSubChapter ? "e.g. 11.1" : "e.g. 11 or গল্প ১"} className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" onChange={(e) => setFormData({...formData, chapterLabel: e.target.value})} />
+                      <input type="text" required placeholder={formData.isSubChapter ? "e.g. 11.1" : "e.g. 11 or গল্প ১"} className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" value={formData.chapterLabel || ''} onChange={(e) => setFormData({...formData, chapterLabel: e.target.value})} />
                     </div>
                     <div className="col-span-1">
                       <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Chapter Title</label>
-                      <input type="text" required placeholder="e.g. স্থানাঙ্ক জ্যামিতি" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" onChange={(e) => setFormData({...formData, title: e.target.value})} />
+                      <input type="text" required placeholder="e.g. স্থানাঙ্ক জ্যামিতি" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" value={formData.title || ''} onChange={(e) => setFormData({...formData, title: e.target.value})} />
                     </div>
                   </div>
                 </>
@@ -412,11 +475,11 @@ export default function Taxonomy() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Topic Order</label>
-                      <input type="number" required autoFocus min="1" placeholder="e.g. 1" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" onChange={(e) => setFormData({...formData, topicOrder: e.target.value})} />
+                      <input type="number" required autoFocus min="1" placeholder="e.g. 1" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" value={formData.topicOrder || ''} onChange={(e) => setFormData({...formData, topicOrder: e.target.value})} />
                     </div>
                     <div>
                       <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Importance</label>
-                      <select className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-300 font-bold outline-none shadow-inner text-sm" onChange={(e) => setFormData({...formData, stars: e.target.value})}>
+                      <select className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-300 font-bold outline-none shadow-inner text-sm" value={formData.stars || 1} onChange={(e) => setFormData({...formData, stars: e.target.value})}>
                         <option value="1">★ 1 Star</option>
                         <option value="2">★★ 2 Stars</option>
                         <option value="3">★★★ 3 Stars</option>
@@ -425,7 +488,7 @@ export default function Taxonomy() {
                   </div>
                   <div>
                     <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Topic Title</label>
-                    <input type="text" required placeholder="e.g. Distance & Displacement" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" onChange={(e) => setFormData({...formData, title: e.target.value})} />
+                    <input type="text" required placeholder="e.g. Distance & Displacement" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" value={formData.title || ''} onChange={(e) => setFormData({...formData, title: e.target.value})} />
                   </div>
                 </>
               )}

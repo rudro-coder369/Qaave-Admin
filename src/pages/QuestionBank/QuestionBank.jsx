@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { taxonomyApi } from '../../services/taxonomyService';
 import { questionService } from '../../services/questionService';
 import toast, { Toaster } from 'react-hot-toast';
-import * as XLSX from 'xlsx'; // 🚀 Excel Library Imported
-import { Plus, Zap, Image as ImageIcon, Trash2, BookOpen, Search, CheckCircle2, Layers, X, PlusCircle, Loader2, AlignLeft, Settings, CheckSquare, Download, UploadCloud } from 'lucide-react';
+import * as XLSX from 'xlsx'; 
+import { Plus, Zap, Image as ImageIcon, Trash2, BookOpen, Search, CheckCircle2, Layers, X, PlusCircle, Loader2, AlignLeft, Settings, CheckSquare, Download, UploadCloud, Pencil } from 'lucide-react'; // 🚀 Added Pencil Icon
 
 export default function QuestionBank() {
   const [subjects, setSubjects] = useState([]);
@@ -17,9 +17,10 @@ export default function QuestionBank() {
 
   const [questions, setQuestions] = useState([]);
   
-  // Loading States
+  // Loading & Edit States
   const [isFetchingQuestions, setIsFetchingQuestions] = useState(false);
   const [isSavingQuestion, setIsSavingQuestion] = useState(false);
+  const [editingId, setEditingId] = useState(null); // 🚀 NEW: Tracks which question is being edited
 
   // Ultimate Form State
   const [qType, setQType] = useState('mcq');
@@ -28,7 +29,6 @@ export default function QuestionBank() {
     importance: 3, isExamMaterial: false, isContentMaterial: false
   });
   
-  // Multiple Boards State
   const [boardTags, setBoardTags] = useState([]);
 
   const [options, setOptions] = useState([
@@ -36,7 +36,6 @@ export default function QuestionBank() {
     { text: '', isCorrect: false }, { text: '', isCorrect: false }
   ]);
   
-  // 🚀 FIX: Removed Explanation from CQ Parts
   const [cqParts, setCqParts] = useState([
     { label: 'k', qText: '', aText: '' }, 
     { label: 'kh', qText: '', aText: '' },
@@ -46,64 +45,99 @@ export default function QuestionBank() {
 
   useEffect(() => { 
     taxonomyApi.getSubjects().then(setSubjects).catch(err => toast.error(err.message));
-    
-    questionService.getBoards()
-      .then(data => setBoards(data))
-      .catch(err => toast.error("Failed to load Boards: " + err.message));
+    questionService.getBoards().then(setBoards).catch(err => toast.error("Failed to load Boards: " + err.message));
   }, []);
   
   useEffect(() => {
     if (selectedSub) {
       taxonomyApi.getChapters(selectedSub).then(setChapters);
-      setSelectedChap(''); setSelectedTop(''); setQuestions([]);
+      setSelectedChap(''); setSelectedTop(''); setQuestions([]); resetForm();
     }
   }, [selectedSub]);
 
-  // Double API Call Fix
   useEffect(() => {
     if (selectedChap) {
       taxonomyApi.getTopics(selectedChap).then(setTopics);
-      setSelectedTop(''); 
+      setSelectedTop(''); resetForm();
     } else {
-      setTopics([]);
-      setQuestions([]);
+      setTopics([]); setQuestions([]); resetForm();
     }
   }, [selectedChap]);
 
-  useEffect(() => {
-    let isMounted = true;
-    if (selectedChap) {
-      setIsFetchingQuestions(true);
-      questionService.getQuestions(selectedChap, selectedTop || null)
-        .then(data => { if (isMounted) setQuestions(data); })
-        .catch(err => toast.error(err.message))
-        .finally(() => { if (isMounted) setIsFetchingQuestions(false); });
+  const fetchQuestions = () => {
+    if (!selectedChap) return;
+    setIsFetchingQuestions(true);
+    questionService.getQuestions(selectedChap, selectedTop || null)
+      .then(data => setQuestions(data))
+      .catch(err => toast.error(err.message))
+      .finally(() => setIsFetchingQuestions(false));
+  };
+
+  useEffect(() => { fetchQuestions(); }, [selectedChap, selectedTop]);
+
+  // 🚀 FORM RESET FUNCTION
+  const resetForm = () => {
+    setEditingId(null);
+    setNewQ({ text: '', imagePath: '', explanation: '', solution: '', importance: 3, isExamMaterial: false, isContentMaterial: false });
+    setBoardTags([]);
+    setOptions([{ text: '', isCorrect: true }, { text: '', isCorrect: false }, { text: '', isCorrect: false }, { text: '', isCorrect: false }]);
+    setCqParts([{ label: 'k', qText: '', aText: '' }, { label: 'kh', qText: '', aText: '' }, { label: 'g', qText: '', aText: '' }, { label: 'gh', qText: '', aText: '' }]);
+  };
+
+  // 🚀 EDIT FUNCTION (Populates the form)
+  const handleEditClick = (q) => {
+    setEditingId(q.id);
+    const type = q.q_type === 'sq' ? 'sq1' : q.q_type === 'written' ? 'sq2' : q.q_type;
+    setQType(type);
+    
+    setNewQ({
+      text: q.question_text || '',
+      imagePath: q.question_image_path || '',
+      explanation: q.explanation || '',
+      solution: q.solution || '',
+      importance: q.importance || 3,
+      isExamMaterial: q.is_exam_material || false,
+      isContentMaterial: q.is_content_material || false
+    });
+
+    if (q.q_type === 'mcq' && q.mcq_options) {
+      const formattedOptions = q.mcq_options.map(o => ({ text: o.option_text, isCorrect: o.is_correct }));
+      while(formattedOptions.length < 4) formattedOptions.push({ text: '', isCorrect: false });
+      setOptions(formattedOptions);
     }
-    return () => { isMounted = false; };
-  }, [selectedChap, selectedTop]);
+
+    if (q.q_type === 'cq' && q.cq_parts) {
+      const parts = ['k', 'kh', 'g', 'gh'].map(label => {
+        const existing = q.cq_parts.find(p => p.label === label);
+        return { label, qText: existing?.question_text || '', aText: existing?.answer_text || '' };
+      });
+      setCqParts(parts);
+    }
+
+    if (q.question_board_history) {
+      setBoardTags(q.question_board_history.map(h => ({ boardId: h.board_id, year: h.year })));
+    } else {
+      setBoardTags([]);
+    }
+
+    toast.success("Question loaded for editing. Check the right panel.");
+  };
 
   const handleDeleteQuestion = async (id) => {
     if (!window.confirm('Are you sure you want to delete this question?')) return;
     try {
       await questionService.deleteQuestion(id);
       setQuestions(questions.filter(q => q.id !== id));
+      if (editingId === id) resetForm();
       toast.success('Question deleted successfully!');
-    } catch (error) {
-      toast.error("Failed to delete: " + error.message);
-    }
+    } catch (error) { toast.error("Failed to delete: " + error.message); }
   };
 
   const addBoardTag = () => setBoardTags(prev => [...prev, { boardId: '', year: '' }]);
-  
-  const updateBoardTag = (index, field, value) => {
-    setBoardTags(prevTags => prevTags.map((tag, i) => (i === index ? { ...tag, [field]: value } : tag)));
-  };
-  
-  const removeBoardTag = (index) => {
-    setBoardTags(prevTags => prevTags.filter((_, i) => i !== index));
-  };
+  const updateBoardTag = (index, field, value) => setBoardTags(prev => prev.map((tag, i) => (i === index ? { ...tag, [field]: value } : tag)));
+  const removeBoardTag = (index) => setBoardTags(prev => prev.filter((_, i) => i !== index));
 
-  const handleAddQuestion = async (e) => {
+  const handleAddOrUpdateQuestion = async (e) => {
     e.preventDefault();
     if (!selectedChap) return toast.error("Select at least Subject & Chapter!");
     if (!newQ.text) return toast.error("Question stem/text is empty!");
@@ -111,89 +145,51 @@ export default function QuestionBank() {
     const actualQType = qType === 'sq1' ? 'sq' : qType === 'sq2' ? 'written' : qType;
     const validBoardTags = boardTags.filter(b => b.boardId && b.year);
 
+    const payload = {
+      subjectId: selectedSub, chapterId: selectedChap, topicId: selectedTop || null,
+      qType: actualQType, text: newQ.text, imagePath: ['mcq', 'cq'].includes(qType) ? newQ.imagePath : null,
+      explanation: newQ.explanation, solution: newQ.solution, importance: newQ.importance,
+      isExamMaterial: newQ.isExamMaterial, isContentMaterial: newQ.isContentMaterial,
+      optionsArray: qType === 'mcq' ? options : null, cqParts: qType === 'cq' ? cqParts : null,
+      boardTags: ['mcq', 'cq'].includes(qType) ? validBoardTags : []
+    };
+
     try {
       setIsSavingQuestion(true);
-      await questionService.addQuestion({
-        subjectId: selectedSub,
-        chapterId: selectedChap,
-        topicId: selectedTop || null,
-        qType: actualQType,
-        text: newQ.text,
-        imagePath: ['mcq', 'cq'].includes(qType) ? newQ.imagePath : null,
-        explanation: newQ.explanation,
-        solution: newQ.solution,
-        importance: newQ.importance,
-        isExamMaterial: newQ.isExamMaterial,
-        isContentMaterial: newQ.isContentMaterial,
-        optionsArray: qType === 'mcq' ? options : null,
-        cqParts: qType === 'cq' ? cqParts : null,
-        boardTags: ['mcq', 'cq'].includes(qType) ? validBoardTags : []
-      });
-      
-      toast.success(`Question saved seamlessly!`);
-      
-      // Reset States
-      setNewQ({ text: '', imagePath: '', explanation: '', solution: '', importance: 3, isExamMaterial: false, isContentMaterial: false });
-      setBoardTags([]);
-      setOptions([{ text: '', isCorrect: true }, { text: '', isCorrect: false }, { text: '', isCorrect: false }, { text: '', isCorrect: false }]);
-      // 🚀 FIX: Reset matched the new CQ Parts State
-      setCqParts([{ label: 'k', qText: '', aText: '' }, { label: 'kh', qText: '', aText: '' }, { label: 'g', qText: '', aText: '' }, { label: 'gh', qText: '', aText: '' }]);
-      
-      const freshQuestions = await questionService.getQuestions(selectedChap, selectedTop || null);
-      setQuestions(freshQuestions);
-
-    } catch (error) {
-      toast.error("Error: " + error.message);
-    } finally {
-      setIsSavingQuestion(false);
-    }
+      if (editingId) {
+        await questionService.updateQuestion(editingId, payload);
+        toast.success(`Question updated successfully!`);
+      } else {
+        await questionService.addQuestion(payload);
+        toast.success(`Question saved seamlessly!`);
+      }
+      resetForm();
+      fetchQuestions();
+    } catch (error) { toast.error("Error: " + error.message); } 
+    finally { setIsSavingQuestion(false); }
   };
 
   // ==========================================
-  // 🚀 1. EXCEL TEMPLATE GENERATOR (4 Types - Cleaned CQ)
+  // 🚀 EXCEL TEMPLATE GENERATOR
   // ==========================================
   const downloadSpecificTemplate = (type) => {
     let templateData = [];
     let fileName = "";
 
     if (type === 'mcq') {
-      templateData = [{
-        Type: "mcq", Question_Stem: "নিচের কোনটি ভেক্টর রাশি?", Image_URL: "",
-        Importance_1_to_5: 5, Is_Exam_Material: "TRUE", Is_Content_Material: "TRUE",
-        Option_A: "কাজ", Option_B: "তাপমাত্রা", Option_C: "বেগ", Option_D: "দ্রুতি",
-        Correct_Option_ABCD: "C", Explanation: "বেগের মান ও দিক উভয়ই আছে।",
-        Board_Tags: "Dhaka-2023, Comilla-2022" 
-      }];
+      templateData = [{ Type: "mcq", Question_Stem: "নিচের কোনটি ভেক্টর রাশি?", Image_URL: "", Importance_1_to_5: 5, Is_Exam_Material: "TRUE", Is_Content_Material: "TRUE", Option_A: "কাজ", Option_B: "তাপমাত্রা", Option_C: "বেগ", Option_D: "দ্রুতি", Correct_Option_ABCD: "C", Explanation: "বেগের মান ও দিক উভয়ই আছে।", Board_Tags: "Dhaka-2023, Comilla-2022" }];
       fileName = "Qaave_MCQ_Template.xlsx";
     } 
     else if (type === 'sq1') {
-      templateData = [{
-        Type: "sq", Question_Stem: "বলবিদ্যা কাকে বলে?", Image_URL: "", 
-        Importance_1_to_5: 3, Is_Exam_Material: "FALSE", Is_Content_Material: "TRUE",
-        Exact_Solution: "পদার্থবিজ্ঞানের যে শাখায় বল ও বস্তুর গতির সম্পর্ক নিয়ে আলোচনা করা হয়, তাকে বলবিদ্যা বলে।",
-        Board_Tags: "Rajshahi-2021"
-      }];
+      templateData = [{ Type: "sq", Question_Stem: "বলবিদ্যা কাকে বলে?", Image_URL: "", Importance_1_to_5: 3, Is_Exam_Material: "FALSE", Is_Content_Material: "TRUE", Exact_Solution: "পদার্থবিজ্ঞানের যে শাখায় বল ও বস্তুর গতির সম্পর্ক নিয়ে আলোচনা করা হয়...", Board_Tags: "Rajshahi-2021" }];
       fileName = "Qaave_SQ_1_Mark_Template.xlsx";
     }
     else if (type === 'sq2') {
-      templateData = [{
-        Type: "written", Question_Stem: "গাড়ির টায়ার খাঁজকাটা থাকে কেন? ব্যাখ্যা করো।", Image_URL: "", 
-        Importance_1_to_5: 4, Is_Exam_Material: "TRUE", Is_Content_Material: "TRUE",
-        Exact_Solution: "ঘর্ষণ বল বৃদ্ধি করার জন্য। খাঁজকাটা থাকলে রাস্তার সাথে টায়ারের গ্রিপ ভালো হয়...",
-        Board_Tags: "Sylhet-2023"
-      }];
+      templateData = [{ Type: "written", Question_Stem: "গাড়ির টায়ার খাঁজকাটা থাকে কেন?", Image_URL: "", Importance_1_to_5: 4, Is_Exam_Material: "TRUE", Is_Content_Material: "TRUE", Exact_Solution: "ঘর্ষণ বল বৃদ্ধি করার জন্য...", Board_Tags: "Sylhet-2023" }];
       fileName = "Qaave_SQ_2_Marks_Template.xlsx";
     }
     else if (type === 'cq') {
-      templateData = [{
-        Type: "cq", Stem_Text: "একটি গাড়ি স্থির অবস্থান থেকে 2 m/s² সুষম ত্বরণে চলতে শুরু করল। (উদ্দীপক)", Image_URL: "https://example.com/car.jpg", 
-        Importance_1_to_5: 4, Is_Exam_Material: "TRUE", Is_Content_Material: "FALSE",
-        Q_K: "ত্বরণ কাকে বলে?", Ans_K: "সময়ের সাথে বেগ বৃদ্ধির হারকে ত্বরণ বলে।",
-        Q_Kh: "সুষম ত্বরণ কী?", Ans_Kh: "বেগ নির্দিষ্ট দিকে সমান হারে বাড়লে তাকে সুষম ত্বরণ বলে।",
-        Q_G: "5 সেকেন্ডে কত দূরত্ব অতিক্রম করবে?", Ans_G: "25 মিটার (s = ut + 0.5 * a * t^2)",
-        Q_Gh: "গ্রাফটি বিশ্লেষণ করো।", Ans_Gh: "মূলবিন্দুগামী সরলরেখা হবে যা সুষম ত্বরণ নির্দেশ করে।",
-        Board_Tags: "Cadet College-2024"
-      }];
+      templateData = [{ Type: "cq", Stem_Text: "একটি গাড়ি স্থির অবস্থান থেকে... (উদ্দীপক)", Image_URL: "https://example.com/car.jpg", Importance_1_to_5: 4, Is_Exam_Material: "TRUE", Is_Content_Material: "FALSE", Q_K: "ত্বরণ কাকে বলে?", Ans_K: "সময়ের সাথে বেগ বৃদ্ধির হারকে...", Q_Kh: "সুষম ত্বরণ কী?", Ans_Kh: "বেগ নির্দিষ্ট দিকে...", Q_G: "5 সেকেন্ডে কত দূরত্ব?", Ans_G: "25 মিটার", Q_Gh: "গ্রাফটি বিশ্লেষণ করো।", Ans_Gh: "মূলবিন্দুগামী সরলরেখা হবে...", Board_Tags: "Cadet College-2024" }];
       fileName = "Qaave_CQ_Template.xlsx";
     }
 
@@ -205,7 +201,7 @@ export default function QuestionBank() {
   };
 
   // ==========================================
-  // 🚀 2. SMART EXCEL UPLOAD (Cleaned CQ Parsing)
+  // 🚀 SMART EXCEL UPLOAD (Fixed Hang Bug)
   // ==========================================
   const handleExcelUpload = (e) => {
     const file = e.target.files[0];
@@ -216,96 +212,87 @@ export default function QuestionBank() {
     reader.onload = async (evt) => {
       try {
         setIsSavingQuestion(true);
-        toast.loading(`Uploading to selected path...`, { id: "excel-upload" });
+        toast.loading(`Uploading data, please wait...`, { id: "excel-upload" });
         
         const bstr = evt.target.result;
         const workbook = XLSX.read(bstr, { type: 'binary' });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         const rawData = XLSX.utils.sheet_to_json(worksheet);
 
+        if (rawData.length === 0) throw new Error("The uploaded Excel file is empty.");
+
         let successCount = 0;
 
         for (const row of rawData) {
-          const qType = String(row.Type || 'mcq').toLowerCase().trim();
+          try {
+            const qType = String(row.Type || 'mcq').toLowerCase().trim();
 
-          // 🧠 Board Tag Parsing
-          let validBoardTags = [];
-          if (row.Board_Tags) {
-            validBoardTags = String(row.Board_Tags).split(',').map(tag => {
-              const [boardName, year] = tag.trim().split('-');
-              if(!boardName || !year) return null;
-              const foundBoard = boards.find(b => b.short_name?.toLowerCase() === boardName.toLowerCase() || b.name?.toLowerCase() === boardName.toLowerCase());
-              return { boardId: foundBoard?.id || '', year: parseInt(year) };
-            }).filter(b => b && b.boardId && b.year);
+            let validBoardTags = [];
+            if (row.Board_Tags) {
+              validBoardTags = String(row.Board_Tags).split(',').map(tag => {
+                const [boardName, year] = tag.trim().split('-');
+                if(!boardName || !year) return null;
+                const foundBoard = boards.find(b => b.short_name?.toLowerCase() === boardName.toLowerCase() || b.name?.toLowerCase() === boardName.toLowerCase());
+                return { boardId: foundBoard?.id || '', year: parseInt(year) };
+              }).filter(b => b && b.boardId && b.year);
+            }
+
+            const optionsArray = qType === 'mcq' ? [
+              { text: String(row.Option_A || ''), isCorrect: String(row.Correct_Option_ABCD || '').trim().toUpperCase() === 'A' },
+              { text: String(row.Option_B || ''), isCorrect: String(row.Correct_Option_ABCD || '').trim().toUpperCase() === 'B' },
+              { text: String(row.Option_C || ''), isCorrect: String(row.Correct_Option_ABCD || '').trim().toUpperCase() === 'C' },
+              { text: String(row.Option_D || ''), isCorrect: String(row.Correct_Option_ABCD || '').trim().toUpperCase() === 'D' }
+            ] : null;
+
+            const cqParts = qType === 'cq' ? [
+              { label: 'k', qText: row.Q_K || '', aText: row.Ans_K || '' },
+              { label: 'kh', qText: row.Q_Kh || '', aText: row.Ans_Kh || '' },
+              { label: 'g', qText: row.Q_G || '', aText: row.Ans_G || '' },
+              { label: 'gh', qText: row.Q_Gh || '', aText: row.Ans_Gh || '' }
+            ] : null;
+
+            await questionService.addQuestion({
+              subjectId: selectedSub, chapterId: selectedChap, topicId: selectedTop || null,
+              qType: qType, text: row.Question_Stem || row.Stem_Text || '', imagePath: row.Image_URL || null,
+              explanation: row.Explanation || '', solution: ['sq', 'written'].includes(qType) ? (row.Exact_Solution || '') : '',
+              importance: parseInt(row.Importance_1_to_5) || 3,
+              isExamMaterial: String(row.Is_Exam_Material).toUpperCase() === 'TRUE',
+              isContentMaterial: String(row.Is_Content_Material).toUpperCase() === 'TRUE',
+              optionsArray, cqParts, boardTags: validBoardTags
+            });
+
+            successCount++;
+          } catch (rowError) {
+            console.error("Failed to add row:", row, rowError);
           }
-
-          // 🧠 MCQ Parsing
-          const optionsArray = qType === 'mcq' ? [
-            { text: String(row.Option_A || ''), isCorrect: String(row.Correct_Option_ABCD).trim().toUpperCase() === 'A' },
-            { text: String(row.Option_B || ''), isCorrect: String(row.Correct_Option_ABCD).trim().toUpperCase() === 'B' },
-            { text: String(row.Option_C || ''), isCorrect: String(row.Correct_Option_ABCD).trim().toUpperCase() === 'C' },
-            { text: String(row.Option_D || ''), isCorrect: String(row.Correct_Option_ABCD).trim().toUpperCase() === 'D' }
-          ] : null;
-
-          // 🧠 CQ Parsing (Cleaned up Explanation)
-          const cqParts = qType === 'cq' ? [
-            { label: 'k', qText: row.Q_K || '', aText: row.Ans_K || '' },
-            { label: 'kh', qText: row.Q_Kh || '', aText: row.Ans_Kh || '' },
-            { label: 'g', qText: row.Q_G || '', aText: row.Ans_G || '' },
-            { label: 'gh', qText: row.Q_Gh || '', aText: row.Ans_Gh || '' }
-          ] : null;
-
-          // 🧠 Batch Insert
-          await questionService.addQuestion({
-            subjectId: selectedSub,
-            chapterId: selectedChap,
-            topicId: selectedTop || null,
-            qType: qType,
-            text: row.Question_Stem || row.Stem_Text || '',
-            imagePath: row.Image_URL || null,
-            explanation: row.Explanation || '',
-            solution: ['sq', 'written'].includes(qType) ? (row.Exact_Solution || '') : '',
-            importance: parseInt(row.Importance_1_to_5) || 3,
-            isExamMaterial: String(row.Is_Exam_Material).toUpperCase() === 'TRUE',
-            isContentMaterial: String(row.Is_Content_Material).toUpperCase() === 'TRUE',
-            optionsArray,
-            cqParts,
-            boardTags: validBoardTags
-          });
-
-          successCount++;
         }
 
-        toast.success(`Successfully imported ${successCount} questions!`, { id: "excel-upload" });
-        const freshQuestions = await questionService.getQuestions(selectedChap, selectedTop || null);
-        setQuestions(freshQuestions);
+        if (successCount === 0) throw new Error("No valid questions could be imported.");
+
+        toast.success(`Successfully imported ${successCount} out of ${rawData.length} questions!`, { id: "excel-upload" });
+        fetchQuestions();
 
       } catch (err) {
         toast.error("Import failed: " + err.message, { id: "excel-upload" });
       } finally {
         setIsSavingQuestion(false);
-        e.target.value = null; // Reset File Input
       }
     };
+    
     reader.readAsBinaryString(file);
+    e.target.value = null; // Clear input
   };
 
   const renderChapterOptions = () => {
     const mainChapters = chapters.filter(c => !c.parent_chapter_id);
-    
     return mainChapters.map(mainChap => {
       const subChapters = chapters.filter(c => c.parent_chapter_id === mainChap.id);
       const sectionPrefix = mainChap.section_name ? `[${mainChap.section_name}] ` : '';
-      
       return (
         <optgroup key={mainChap.id} label={`${sectionPrefix}${mainChap.chapter_label || 'CH'}: ${mainChap.title}`}>
-          <option value={mainChap.id} className="text-slate-200 bg-[#07090E]">
-            • {mainChap.title} (Main)
-          </option>
+          <option value={mainChap.id} className="text-slate-200 bg-[#07090E]">• {mainChap.title} (Main)</option>
           {subChapters.map(subChap => (
-            <option key={subChap.id} value={subChap.id} className="text-blue-300 bg-[#0B0F19] font-medium">
-              &nbsp;&nbsp;&nbsp;↳ {subChap.chapter_label || 'Sub'}: {subChap.title}
-            </option>
+            <option key={subChap.id} value={subChap.id} className="text-blue-300 bg-[#0B0F19] font-medium">&nbsp;&nbsp;&nbsp;↳ {subChap.chapter_label || 'Sub'}: {subChap.title}</option>
           ))}
         </optgroup>
       );
@@ -318,38 +305,32 @@ export default function QuestionBank() {
       
       <div className="bg-[#0B0F19] p-4 rounded-2xl border border-[#1E293B] mb-4 flex flex-col lg:flex-row items-center justify-between gap-4 shrink-0 shadow-lg">
         
-        {/* Title and Bulk Actions Container */}
         <div className="flex items-center justify-between w-full lg:w-auto">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-[#2563EB]/10 border border-[#2563EB]/20 rounded-xl shadow-inner">
-              <Layers className="w-5 h-5 text-[#2563EB]" />
-            </div>
+            <div className="p-2.5 bg-[#2563EB]/10 border border-[#2563EB]/20 rounded-xl shadow-inner"><Layers className="w-5 h-5 text-[#2563EB]" /></div>
             <div>
               <h1 className="text-xl font-black text-white tracking-tight leading-none">Question Bank</h1>
               <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-widest mt-1">Content Team Workspace</p>
             </div>
           </div>
 
-          {/* 🚀 BULK ACTION BUTTONS (Download 4 Templates & Upload) */}
-          <div className="hidden lg:flex ml-6 gap-2 items-center">
-            <select 
-              onChange={(e) => { 
-                if(e.target.value) { downloadSpecificTemplate(e.target.value); e.target.value = ''; }
-              }}
-              className="px-3 py-2 bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-inner outline-none cursor-pointer"
-            >
-              <option value="">📥 Get Template</option>
-              <option value="mcq">MCQ Template</option>
-              <option value="sq1">SQ (1 Mark) Template</option>
-              <option value="sq2">SQ (2 Marks) Template</option>
-              <option value="cq">CQ (Creative) Template</option>
-            </select>
+          {/* 🚀 BULK ACTION BUTTONS (Only shows if a chapter is selected) */}
+          {selectedChap && (
+            <div className="hidden lg:flex ml-6 gap-2 items-center animate-in fade-in zoom-in duration-300">
+              <select onChange={(e) => { if(e.target.value) { downloadSpecificTemplate(e.target.value); e.target.value = ''; } }} className="px-3 py-2 bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-inner outline-none cursor-pointer">
+                <option value="">📥 Get Template</option>
+                <option value="mcq">MCQ Template</option>
+                <option value="sq1">SQ (1 Mark) Template</option>
+                <option value="sq2">SQ (2 Marks) Template</option>
+                <option value="cq">CQ (Creative) Template</option>
+              </select>
 
-            <label htmlFor="excel-upload" className={`cursor-pointer flex items-center gap-1.5 px-3 py-2 ${!selectedChap ? 'bg-slate-800/50 text-slate-600 border-slate-800 cursor-not-allowed' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500 hover:text-white'} border rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-inner`}>
-              <UploadCloud className="w-3.5 h-3.5" /> Upload Data
-              <input type="file" id="excel-upload" accept=".xlsx, .xls" className="hidden" onChange={handleExcelUpload} disabled={!selectedChap || isSavingQuestion} />
-            </label>
-          </div>
+              <label htmlFor="excel-upload" className="cursor-pointer flex items-center gap-1.5 px-3 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500 hover:text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-inner">
+                <UploadCloud className="w-3.5 h-3.5" /> Upload Data
+                <input type="file" id="excel-upload" accept=".xlsx, .xls" className="hidden" onChange={handleExcelUpload} disabled={isSavingQuestion} />
+              </label>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col md:flex-row flex-1 w-full lg:max-w-3xl gap-3">
@@ -357,12 +338,10 @@ export default function QuestionBank() {
             <option value="">1. Select Subject</option>
             {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-          
           <select className="flex-1 p-3 bg-[#07090E] border border-[#1E293B] rounded-xl focus:ring-2 focus:ring-[#2563EB] outline-none shadow-inner disabled:opacity-40 text-xs font-bold text-slate-300 transition-all" value={selectedChap} onChange={(e) => setSelectedChap(e.target.value)} disabled={!selectedSub}>
             <option value="">2. Select Chapter</option>
             {renderChapterOptions()}
           </select>
-          
           <select className="flex-1 p-3 bg-[#2563EB]/5 border border-[#2563EB]/20 rounded-xl focus:ring-2 focus:ring-[#2563EB] outline-none shadow-inner disabled:opacity-40 text-xs font-black text-[#2563EB] transition-all" value={selectedTop} onChange={(e) => setSelectedTop(e.target.value)} disabled={!selectedChap}>
             <option value="" className="bg-[#07090E] text-slate-400">3. Topic (Optional)</option>
             {topics.map(t => <option key={t.id} value={t.id} className="bg-[#07090E]">{t.topic_order}. {t.title}</option>)}
@@ -390,23 +369,24 @@ export default function QuestionBank() {
             
             <div className="flex-1 p-5 overflow-y-auto space-y-4 custom-scrollbar">
               {isFetchingQuestions ? (
-                <div className="flex flex-col items-center justify-center h-full text-slate-500">
-                  <Loader2 className="w-8 h-8 animate-spin text-[#2563EB] mb-3" />
-                  <p className="text-[10px] font-bold uppercase tracking-widest">Syncing Data...</p>
-                </div>
+                <div className="flex flex-col items-center justify-center h-full text-slate-500"><Loader2 className="w-8 h-8 animate-spin text-[#2563EB] mb-3" /><p className="text-[10px] font-bold uppercase tracking-widest">Syncing Data...</p></div>
               ) : questions.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-slate-500 opacity-60">
-                  <BookOpen className="w-12 h-12 mb-3" />
-                  <p className="text-[10px] font-bold uppercase tracking-widest">No questions yet</p>
-                </div>
+                <div className="flex flex-col items-center justify-center h-full text-slate-500 opacity-60"><BookOpen className="w-12 h-12 mb-3" /><p className="text-[10px] font-bold uppercase tracking-widest">No questions yet</p></div>
               ) : (
                 questions.map((q, idx) => (
-                  <div key={q.id} className="bg-[#07090E]/50 p-5 rounded-2xl border border-[#1E293B] hover:border-[#2563EB]/50 transition-all duration-300 group relative">
-                    <button onClick={() => handleDeleteQuestion(q.id)} className="absolute top-4 right-4 p-2 bg-transparent text-slate-500 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-rose-500/10 hover:text-rose-400 transition-all duration-200" title="Delete">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  <div key={q.id} className={`bg-[#07090E]/50 p-5 rounded-2xl border transition-all duration-300 group relative ${editingId === q.id ? 'border-[#2563EB] shadow-[0_0_15px_rgba(37,99,235,0.15)]' : 'border-[#1E293B] hover:border-[#2563EB]/50'}`}>
+                    
+                    {/* 🚀 ACTION BUTTONS (Edit & Delete) */}
+                    <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                      <button onClick={() => handleEditClick(q)} className="p-2 bg-[#0B0F19] text-blue-400 rounded-lg hover:bg-blue-500/20 transition-all" title="Edit Question">
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleDeleteQuestion(q.id)} className="p-2 bg-[#0B0F19] text-rose-500 rounded-lg hover:bg-rose-500/20 transition-all" title="Delete Question">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
 
-                    <div className="flex justify-between items-start mb-3 pr-8">
+                    <div className="flex justify-between items-start mb-3 pr-20">
                       <span className="font-bold text-slate-200 leading-relaxed text-sm">
                         <span className="text-[9px] font-black uppercase tracking-widest bg-[#2563EB]/10 text-[#2563EB] border border-[#2563EB]/20 px-2.5 py-1 rounded-md mr-2">
                           {q.q_type === 'sq' ? 'SQ (1)' : q.q_type === 'written' ? 'SQ (2)' : q.q_type}
@@ -418,7 +398,6 @@ export default function QuestionBank() {
                     <div className="flex flex-wrap gap-2 mb-4">
                       {q.is_exam_material && <div className="inline-flex items-center gap-1.5 text-[9px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2.5 py-1 rounded-md uppercase tracking-widest"><Zap className="w-3 h-3"/> 20/80 Exam Flow</div>}
                       {q.is_content_material && <div className="inline-flex items-center gap-1.5 text-[9px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-md uppercase tracking-widest"><Layers className="w-3 h-3"/> Core Content Flow</div>}
-                      
                       {q.question_board_history?.map(history => (
                         <div key={`${history.board_id}-${history.year}`} className="inline-flex items-center text-[9px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-1 rounded-md uppercase tracking-widest">
                           {history.boards?.short_name || history.boards?.name} '{history.year?.toString().slice(-2)}
@@ -432,14 +411,12 @@ export default function QuestionBank() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-2">
                         {q.mcq_options?.map((opt, i) => (
                           <div key={opt.id} className={`p-3 text-xs rounded-xl border transition-colors ${opt.is_correct ? 'bg-[#2563EB]/10 border-[#2563EB]/40 font-bold text-[#2563EB]' : 'bg-[#0B0F19] border-[#1E293B] text-slate-400'}`}>
-                            <span className={`inline-flex items-center justify-center w-5 h-5 rounded-md mr-2 text-[10px] font-black ${opt.is_correct ? 'bg-[#2563EB]/20 text-[#2563EB]' : 'bg-[#1E293B] text-slate-500'}`}>{String.fromCharCode(65 + i)}</span>
-                            {opt.option_text}
+                            <span className={`inline-flex items-center justify-center w-5 h-5 rounded-md mr-2 text-[10px] font-black ${opt.is_correct ? 'bg-[#2563EB]/20 text-[#2563EB]' : 'bg-[#1E293B] text-slate-500'}`}>{String.fromCharCode(65 + i)}</span>{opt.option_text}
                           </div>
                         ))}
                       </div>
                     )}
 
-                    {/* 🚀 FIX: Display logic matching new CQ structure without explanation */}
                     {q.q_type === 'cq' && (
                       <div className="mt-2 space-y-3 bg-[#0B0F19] p-4 rounded-xl border border-[#1E293B]">
                         {q.cq_parts?.map(p => (
@@ -462,17 +439,17 @@ export default function QuestionBank() {
             </div>
           </div>
 
-          <div className="lg:col-span-5 bg-[#0B0F19] rounded-2xl shadow-lg border border-[#1E293B] flex flex-col h-full overflow-hidden">
+          <div className="lg:col-span-5 bg-[#0B0F19] rounded-2xl shadow-lg border border-[#1E293B] flex flex-col h-full overflow-hidden relative">
             
             <div className="p-4 bg-[#07090E]/80 border-b border-[#1E293B] shrink-0">
               <div className="flex bg-[#07090E] p-1.5 rounded-xl border border-[#1E293B] shadow-inner">
-                {[{ id: 'mcq', label: 'MCQ' }, { id: 'sq1', label: 'SQ (1 Marks)' }, { id: 'sq2', label: 'SQ (2 Marks)' }, { id: 'cq', label: 'Creative (CQ)' }].map(tab => (
+                {[{ id: 'mcq', label: 'MCQ' }, { id: 'sq1', label: 'SQ (1)' }, { id: 'sq2', label: 'SQ (2)' }, { id: 'cq', label: 'Creative' }].map(tab => (
                   <button key={tab.id} type="button" onClick={() => setQType(tab.id)} className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest transition-all rounded-lg ${qType === tab.id ? 'bg-[#2563EB] text-white shadow-lg shadow-[#2563EB]/20' : 'text-slate-500 hover:text-slate-300 hover:bg-[#1E293B]/50'}`}>{tab.label}</button>
                 ))}
               </div>
             </div>
 
-            <form onSubmit={handleAddQuestion} className="flex-1 overflow-y-auto p-5 flex flex-col space-y-6 custom-scrollbar">
+            <form onSubmit={handleAddOrUpdateQuestion} className="flex-1 overflow-y-auto p-5 flex flex-col space-y-6 custom-scrollbar">
               
               <div className="bg-[#07090E]/50 p-4 rounded-xl border border-[#1E293B]">
                 <h3 className="text-[10px] font-black text-[#2563EB] uppercase tracking-widest mb-3 flex items-center gap-2">
@@ -523,7 +500,6 @@ export default function QuestionBank() {
                   </div>
                 )}
 
-                {/* 🚀 FIX: Removed the secondary explanation textarea from CQ input form */}
                 {qType === 'cq' && (
                   <div className="space-y-4">
                     {cqParts.map((part, idx) => (
@@ -556,23 +532,19 @@ export default function QuestionBank() {
                       {boardTags.length === 0 && <p className="text-[10px] text-slate-600 italic ml-1">No tags assigned yet.</p>}
                       {boardTags.map((tag, idx) => (
                         <div key={idx} className="flex items-center gap-2 bg-[#0B0F19] p-1.5 rounded-xl border border-[#1E293B]">
-                          
                           <select className="flex-1 p-2 bg-transparent text-xs outline-none font-medium text-slate-200" value={tag.boardId} onChange={(e) => updateBoardTag(idx, 'boardId', e.target.value)}>
                             <option value="" className="bg-[#0B0F19]">Select Board / Cadet</option>
-                            
                             <optgroup label="General Boards" className="text-slate-500 font-bold bg-[#0B0F19]">
                               {boards.filter(b => b.name !== 'Cadet College').map(b => (
                                 <option key={b.id} value={b.id} className="text-slate-200">{b.name}</option>
                               ))}
                             </optgroup>
-
                             <optgroup label="Special Institutions" className="text-[#2563EB] font-bold bg-[#0B0F19] mt-2">
                               {boards.filter(b => b.name === 'Cadet College').map(b => (
                                 <option key={b.id} value={b.id} className="text-blue-400 font-black">★ {b.name}</option>
                               ))}
                             </optgroup>
                           </select>
-
                           <div className="w-[1px] h-6 bg-[#1E293B]"></div>
                           <input type="number" min="1990" max="2099" className="w-20 p-2 bg-transparent text-xs outline-none font-medium text-slate-200 placeholder-slate-600 text-center" placeholder="Year" value={tag.year} onChange={(e) => updateBoardTag(idx, 'year', e.target.value)} />
                           <button type="button" onClick={() => removeBoardTag(idx)} className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors"><X className="w-4 h-4" /></button>
@@ -612,12 +584,19 @@ export default function QuestionBank() {
                     </div>
                   </label>
                 </div>
-
               </div>
 
-              <div className="pt-4 pb-2 shrink-0">
-                <button type="submit" disabled={isSavingQuestion} className="w-full py-4 bg-[#2563EB] text-white rounded-xl font-black text-sm uppercase tracking-widest shadow-lg shadow-[#2563EB]/25 hover:bg-blue-600 transform hover:-translate-y-0.5 transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed border border-blue-500/50">
-                  {isSavingQuestion ? <><Loader2 className="w-5 h-5 animate-spin"/> Processing...</> : <><Plus className="w-5 h-5" /> Push to Database</>}
+              {/* 🚀 ACTION BUTTONS (Update or Insert) */}
+              <div className="pt-4 pb-2 shrink-0 flex gap-3">
+                {editingId && (
+                  <button type="button" onClick={resetForm} className="w-1/3 py-4 bg-transparent text-slate-400 hover:text-white rounded-xl font-black text-sm uppercase tracking-widest transition-all duration-300 border border-slate-700 hover:border-slate-500">
+                    Cancel
+                  </button>
+                )}
+                <button type="submit" disabled={isSavingQuestion} className={`${editingId ? 'w-2/3' : 'w-full'} py-4 bg-[#2563EB] text-white rounded-xl font-black text-sm uppercase tracking-widest shadow-lg shadow-[#2563EB]/25 hover:bg-blue-600 transform hover:-translate-y-0.5 transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed border border-blue-500/50`}>
+                  {isSavingQuestion ? <><Loader2 className="w-5 h-5 animate-spin"/> Processing...</> : 
+                   editingId ? <><Pencil className="w-5 h-5" /> Update Question</> : 
+                   <><Plus className="w-5 h-5" /> Push to Database</>}
                 </button>
               </div>
             </form>

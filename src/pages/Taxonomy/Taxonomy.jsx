@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { taxonomyApi } from '../../services/taxonomyService';
 import toast, { Toaster } from 'react-hot-toast';
-import { Folder, FileText, Bookmark, Plus, ChevronRight, X, LayoutGrid, Layers, CheckCircle2, Trash2, CornerDownRight } from 'lucide-react';
+import { Folder, FileText, Bookmark, Plus, ChevronRight, X, LayoutGrid, Layers, CheckCircle2, Trash2, CornerDownRight, Pencil } from 'lucide-react'; // 🚀 Added Pencil Icon
 
 export default function Taxonomy() {
   const [subjects, setSubjects] = useState([]);
@@ -15,6 +15,7 @@ export default function Taxonomy() {
   // Modal State
   const [modal, setModal] = useState({ isOpen: false, type: '' });
   const [formData, setFormData] = useState({});
+  const [editingId, setEditingId] = useState(null); // 🚀 NEW: Track editing item
 
   useEffect(() => {
     fetchSubjects();
@@ -51,8 +52,20 @@ export default function Taxonomy() {
     }
   };
 
-  const openModal = (type) => {
-    setFormData(type === 'chapter' ? { isSubChapter: false } : {});
+  // 🚀 UPDATED: openModal now accepts an item to edit
+  const openModal = (type, item = null) => {
+    setEditingId(item ? item.id : null);
+    
+    if (type === 'subject' && item) {
+      setFormData({
+        name: item.name,
+        classLevel: item.class_level,
+        boardGroup: item.board_group
+      });
+    } else {
+      setFormData(type === 'chapter' ? { isSubChapter: false } : {});
+    }
+    
     setModal({ isOpen: true, type });
   };
 
@@ -62,9 +75,22 @@ export default function Taxonomy() {
 
     try {
       if (modal.type === 'subject') {
-        const newSub = await taxonomyApi.addSubject(formData.name, formData.classLevel || 'SSC', formData.boardGroup || 'Science');
-        setSubjects([...subjects, newSub]);
-        toast.success("Subject added successfully.");
+        if (editingId) {
+          // 🚀 UPDATE SUBJECT LOGIC
+          const updatedSub = await taxonomyApi.updateSubject(editingId, formData.name, formData.classLevel || 'SSC', formData.boardGroup || 'Science');
+          setSubjects(subjects.map(s => s.id === editingId ? updatedSub : s));
+          
+          // Update selected subject if currently selected
+          if (selectedSubject?.id === editingId) {
+            setSelectedSubject(updatedSub);
+          }
+          toast.success("Subject updated successfully.");
+        } else {
+          // ADD SUBJECT LOGIC
+          const newSub = await taxonomyApi.addSubject(formData.name, formData.classLevel || 'SSC', formData.boardGroup || 'Science');
+          setSubjects([...subjects, newSub]);
+          toast.success("Subject added successfully.");
+        }
       } 
       else if (modal.type === 'chapter') {
         const newChap = await taxonomyApi.addChapter({
@@ -225,9 +251,11 @@ export default function Taxonomy() {
                   <div className="font-bold text-sm">{sub.name}</div>
                   <div className={`text-[10px] mt-1 font-medium uppercase tracking-wider ${selectedSubject?.id === sub.id ? 'text-blue-200' : 'text-slate-500'}`}>{sub.class_level} • {sub.board_group}</div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  {/* 🚀 NEW: Edit Button */}
+                  <button onClick={(e) => { e.stopPropagation(); openModal('subject', sub); }} className={`p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 ${selectedSubject?.id === sub.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-blue-400 hover:bg-blue-500/10'}`}><Pencil className="w-4 h-4" /></button>
                   <button onClick={(e) => handleDeleteSubject(e, sub.id)} className={`p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 ${selectedSubject?.id === sub.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}`}><Trash2 className="w-4 h-4" /></button>
-                  <ChevronRight className={`w-4 h-4 transition-transform ${selectedSubject?.id === sub.id ? 'opacity-100 translate-x-1' : 'opacity-0 group-hover:opacity-100'}`} />
+                  <ChevronRight className={`w-4 h-4 transition-transform ml-1 ${selectedSubject?.id === sub.id ? 'opacity-100 translate-x-1' : 'opacity-0 group-hover:opacity-100'}`} />
                 </div>
               </div>
             ))}
@@ -286,7 +314,7 @@ export default function Taxonomy() {
           <div className="bg-[#0B0F19] border border-[#1E293B] rounded-3xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.8)] w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-6 bg-[#07090E] border-b border-[#1E293B] flex justify-between items-center">
               <h3 className="text-lg font-black text-white capitalize tracking-tight flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[#2563EB]"></div> Add New {modal.type}
+                <div className="w-2 h-2 rounded-full bg-[#2563EB]"></div> {editingId ? 'Edit' : 'Add New'} {modal.type}
               </h3>
               <button onClick={() => setModal({ isOpen: false, type: '' })} className="text-slate-500 hover:text-white bg-transparent hover:bg-[#1E293B] p-2 rounded-full transition-colors"><X className="w-4 h-4" /></button>
             </div>
@@ -298,12 +326,12 @@ export default function Taxonomy() {
                 <>
                   <div>
                     <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Subject Name</label>
-                    <input type="text" required autoFocus placeholder="e.g. Higher Math" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" onChange={(e) => setFormData({...formData, name: e.target.value})} />
+                    <input type="text" required autoFocus placeholder="e.g. Higher Math" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" value={formData.name || ''} onChange={(e) => setFormData({...formData, name: e.target.value})} />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Class Level</label>
-                      <select className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none shadow-inner text-sm font-medium" onChange={(e) => setFormData({...formData, classLevel: e.target.value})}>
+                      <select className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none shadow-inner text-sm font-medium" value={formData.classLevel || 'SSC'} onChange={(e) => setFormData({...formData, classLevel: e.target.value})}>
                         <option value="SSC">SSC</option>
                         <option value="HSC">HSC</option>
                         <option value="Admission">Admission</option>
@@ -311,18 +339,19 @@ export default function Taxonomy() {
                     </div>
                     <div>
                       <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Group</label>
-                      <select className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none shadow-inner text-sm font-medium" onChange={(e) => setFormData({...formData, boardGroup: e.target.value})}>
+                      <select className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none shadow-inner text-sm font-medium" value={formData.boardGroup || 'Science'} onChange={(e) => setFormData({...formData, boardGroup: e.target.value})}>
                         <option value="Science">Science</option>
                         <option value="Arts">Arts</option>
                         <option value="Commerce">Commerce</option>
                         <option value="General">General</option>
+                        <option value="Common">Common</option>
                       </select>
                     </div>
                   </div>
                 </>
               )}
               
-              {/* 🚀 UPGRADED UX: CHAPTER FIELDS WITH HYBRID INPUT & CHIPS */}
+              {/* CHAPTER FIELDS WITH HYBRID INPUT & CHIPS */}
               {modal.type === 'chapter' && (
                 <>
                   <div className="flex bg-[#07090E] p-1.5 rounded-xl border border-[#1E293B] shadow-inner mb-2">
@@ -333,7 +362,6 @@ export default function Taxonomy() {
                   {!formData.isSubChapter ? (
                     <div className="bg-[#07090E]/50 p-4 rounded-xl border border-[#1E293B]">
                       <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Section Group (Optional)</label>
-                      {/* 🚀 Hybrid Text Input */}
                       <input 
                         type="text" 
                         placeholder="e.g. গদ্য, পদ্য, বীজগণিত..." 
@@ -341,7 +369,6 @@ export default function Taxonomy() {
                         value={formData.sectionName || ''} 
                         onChange={(e) => setFormData({...formData, sectionName: e.target.value})} 
                       />
-                      {/* 🚀 Suggestion Chips for 1-Click Select */}
                       <div className="flex flex-wrap gap-2">
                         {['গদ্য', 'পদ্য', 'উপন্যাস', 'নাটক', 'বীজগণিত', 'জ্যামিতি', 'ত্রিকোণমিতি', 'পরিসংখ্যান'].map(chip => (
                           <button 
@@ -404,7 +431,7 @@ export default function Taxonomy() {
               )}
 
               <button type="submit" disabled={loading} className="w-full py-3.5 rounded-2xl text-white font-black text-sm uppercase tracking-wide transition-all shadow-lg hover:-translate-y-0.5 mt-2 disabled:opacity-50 flex justify-center items-center gap-2 border border-blue-500 bg-[#2563EB] hover:bg-blue-600 shadow-[#2563EB]/20">
-                {loading ? 'Saving Data...' : `Save ${modal.type}`}
+                {loading ? 'Saving Data...' : (editingId ? `Update ${modal.type}` : `Save ${modal.type}`)}
               </button>
             </form>
           </div>

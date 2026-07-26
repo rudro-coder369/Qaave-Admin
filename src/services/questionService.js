@@ -31,7 +31,7 @@ export const questionService = {
     return data;
   },
 
-  // 🚀 ৩. Add Question (Multiple Board Save & Error Handling)
+  // 🚀 ৩. Add Question
   addQuestion: async ({ 
     subjectId, chapterId, topicId, qType, text, imagePath, 
     explanation, solution, importance, isExamMaterial, isContentMaterial, 
@@ -68,13 +68,10 @@ export const questionService = {
         if (optError) throw optError; // Error Check
       }
 
-      // CQ Parts Insert (Explanation ফিল্ড রিমুভ করা হয়েছে)
+      // CQ Parts Insert
       if (qType === 'cq' && cqParts?.length > 0) {
         const parts = cqParts.map(p => ({
-          question_id: questionId, 
-          label: p.label, 
-          question_text: p.qText, 
-          answer_text: p.aText
+          question_id: questionId, label: p.label, question_text: p.qText, answer_text: p.aText
         }));
         const { error: cqError } = await supabase.from('cq_parts').insert(parts);
         if (cqError) throw cqError; // Error Check
@@ -82,12 +79,17 @@ export const questionService = {
 
       // Multiple Board History Insert
       if (boardTags && boardTags.length > 0) {
-        const validBoards = boardTags.filter(b => b.boardId && b.year);
+        // 🛠️ FIX: Универсальный বোর্ড আইডি ফাইন্ডার
+        const validBoards = boardTags.map(b => ({
+          board_id: b.boardId || b.board_id || b.boards?.id,
+          year: parseInt(b.year)
+        })).filter(b => b.board_id && !isNaN(b.year));
+
         if (validBoards.length > 0) {
           const boardInserts = validBoards.map(b => ({
             question_id: questionId, 
-            board_id: b.boardId, 
-            year: parseInt(b.year)
+            board_id: b.board_id, 
+            year: b.year
           }));
           const { error: boardError } = await supabase.from('question_board_history').insert(boardInserts);
           if (boardError) throw boardError; // Error Check
@@ -125,33 +127,48 @@ export const questionService = {
     if (qError) throw qError;
 
     try {
-      // ২. পুরোনো চাইল্ড ডেটা ক্লিয়ার করে দেওয়া (যাতে ডুপ্লিকেট না হয়)
-      await supabase.from('mcq_options').delete().eq('question_id', questionId);
-      await supabase.from('cq_parts').delete().eq('question_id', questionId);
-      await supabase.from('question_board_history').delete().eq('question_id', questionId);
+      // ২. পুরোনো চাইল্ড ডেটা ক্লিয়ার করে দেওয়া (যাতে ডুপ্লিকেট না হয়)
+      const { error: delOptErr } = await supabase.from('mcq_options').delete().eq('question_id', questionId);
+      if (delOptErr) throw delOptErr;
+
+      const { error: delCqErr } = await supabase.from('cq_parts').delete().eq('question_id', questionId);
+      if (delCqErr) throw delCqErr;
+
+      const { error: delBoardErr } = await supabase.from('question_board_history').delete().eq('question_id', questionId);
+      if (delBoardErr) throw delBoardErr;
 
       // ৩. নতুন করে চাইল্ড ডেটা ইনসার্ট করা
       if (qType === 'mcq' && optionsArray?.length > 0) {
         const opts = optionsArray.map((opt, i) => ({ 
           question_id: questionId, option_order: i + 1, option_text: opt.text, is_correct: opt.isCorrect 
         }));
-        await supabase.from('mcq_options').insert(opts);
+        const { error: insOptErr } = await supabase.from('mcq_options').insert(opts);
+        if (insOptErr) throw insOptErr;
       }
       
       if (qType === 'cq' && cqParts?.length > 0) {
         const parts = cqParts.map(p => ({ 
           question_id: questionId, label: p.label, question_text: p.qText, answer_text: p.aText 
         }));
-        await supabase.from('cq_parts').insert(parts);
+        const { error: insCqErr } = await supabase.from('cq_parts').insert(parts);
+        if (insCqErr) throw insCqErr;
       }
       
       if (boardTags && boardTags.length > 0) {
-        const validBoards = boardTags.filter(b => b.boardId && b.year);
+        // 🛠️ FIX: robust mapping to extract board UUID regardless of data source (fetch or new input)
+        const validBoards = boardTags.map(b => ({
+          board_id: b.boardId || b.board_id || b.boards?.id,
+          year: parseInt(b.year)
+        })).filter(b => b.board_id && !isNaN(b.year));
+
         if (validBoards.length > 0) {
           const boardInserts = validBoards.map(b => ({ 
-            question_id: questionId, board_id: b.boardId, year: parseInt(b.year) 
+            question_id: questionId, 
+            board_id: b.board_id, 
+            year: b.year 
           }));
-          await supabase.from('question_board_history').insert(boardInserts);
+          const { error: insBoardErr } = await supabase.from('question_board_history').insert(boardInserts);
+          if (insBoardErr) throw insBoardErr;
         }
       }
       return true;

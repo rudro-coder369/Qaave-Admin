@@ -22,7 +22,7 @@ export const taxonomyApi = {
     return data[0];
   },
 
-  // 🚀 Update Subject Added
+  // 🚀 Update Subject
   updateSubject: async (id, name, classLevel, boardGroup) => {
     const { data, error } = await supabase
       .from('subjects')
@@ -33,11 +33,10 @@ export const taxonomyApi = {
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
-      .select()
-      .single();
+      .select(); // 🚀 Removed .single()
       
     if (error) throw error;
-    return data;
+    return data[0]; // 🚀 Returning first object
   },
 
   deleteSubject: async (id) => {
@@ -48,7 +47,6 @@ export const taxonomyApi = {
 
   // ================= CHAPTERS =================
   getChapters: async (subjectId) => {
-    // 🚀 Update: Ordered by created_at so main chapters and sub-chapters stay in logical insertion sequence
     const { data, error } = await supabase.from('chapters')
       .select('*')
       .eq('subject_id', subjectId)
@@ -57,21 +55,19 @@ export const taxonomyApi = {
     return data;
   },
 
-  // 🚀 Update: Now accepts an object to match the frontend and includes the new columns
   addChapter: async ({ subject_id, chapter_label, title, section_name, parent_chapter_id }) => {
     const slug = generateSlug(title) + '-' + Date.now().toString().slice(-4);
     
-    // 🚀 Fallback Logic: Extract number from chapter_label (e.g. "11.1" -> 11, "গল্প ১" -> 1) to satisfy old chapter_number INT NOT NULL constraint
     const parsedNumber = parseInt(chapter_label.replace(/[^0-9]/g, '')) || 0;
 
     const { data, error } = await supabase.from('chapters').insert([{
       subject_id: subject_id,
-      chapter_number: parsedNumber,       // Legacy NOT NULL field
-      chapter_label: chapter_label,       // New field (e.g. 11.1, গল্প ১)
+      chapter_number: parsedNumber,       
+      chapter_label: chapter_label,       
       title: title,
       slug: slug,
-      section_name: section_name || null, // New field
-      parent_chapter_id: parent_chapter_id || null, // New field
+      section_name: section_name || null, 
+      parent_chapter_id: parent_chapter_id || null, 
       status: 'published'
     }]).select();
     
@@ -79,7 +75,7 @@ export const taxonomyApi = {
     return data[0];
   },
 
-  // 🚀 Update Chapter Added
+  // 🚀 Update Chapter
   updateChapter: async (id, { chapter_label, title, section_name, parent_chapter_id }) => {
     const parsedNumber = parseInt(chapter_label.replace(/[^0-9]/g, '')) || 0;
     
@@ -94,11 +90,10 @@ export const taxonomyApi = {
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
-      .select()
-      .single();
+      .select(); // 🚀 Removed .single()
       
     if (error) throw error;
-    return data;
+    return data[0]; // 🚀 Returning first object
   },
 
   deleteChapter: async (id) => {
@@ -123,7 +118,7 @@ export const taxonomyApi = {
     return data[0];
   },
 
-  // 🚀 Update Topic Added
+  // 🚀 Update Topic
   updateTopic: async (id, topicOrder, title, importance) => {
     const { data, error } = await supabase
       .from('topics')
@@ -134,11 +129,10 @@ export const taxonomyApi = {
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
-      .select()
-      .single();
+      .select(); // 🚀 Removed .single()
       
     if (error) throw error;
-    return data;
+    return data[0]; // 🚀 Returning first object
   },
 
   deleteTopic: async (id) => {

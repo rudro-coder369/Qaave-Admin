@@ -38,7 +38,20 @@ export const questionService = {
   getQuestions: async (chapterId, topicId = null, examMaterialOnly = false, contentMaterialOnly = false) => {
     let query = supabase
       .from('questions')
-      .select('*, mcq_options(*), cq_parts(*), question_board_history(year, boards(id, name, short_name))')
+      .select(`
+        *,
+        mcq_options(*),
+        cq_parts(*),
+        question_board_history(
+          board_id,
+          year,
+          boards(
+            id,
+            name,
+            short_name
+          )
+        )
+      `)
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
 

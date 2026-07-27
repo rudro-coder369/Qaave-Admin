@@ -368,8 +368,12 @@ export default function QuestionBank() {
                       {q.importance >= 3 && <span className="text-[10px] font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 flex items-center gap-1"><Star className="w-3 h-3"/> EXAM</span>}
                       
                       {q.question_board_history?.map((history, hIdx) => (
-                        <span key={`${history.board_id}-${history.year}-${hIdx}`} className="text-[10px] font-semibold text-slate-300 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-600">
-                          {boardsMap[history.board_id]?.short_name || 'Board'} '{history.year?.toString().slice(-2)}
+                        <span
+                          key={`${history.boards?.id}-${history.year}-${hIdx}`}
+                          className="text-[10px] font-semibold text-slate-300 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-600"
+                        >
+                          {history.boards?.short_name || history.boards?.name} '
+                          {String(history.year).slice(-2)}
                         </span>
                       ))}
                     </div>

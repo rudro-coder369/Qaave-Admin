@@ -12,7 +12,7 @@ export default function ExcelTemplateUpload({
   fetchQuestions, 
   isSavingQuestion, 
   setIsSavingQuestion,
-  existingQuestions = [] // 🚀 ডুপ্লিকেট চেকিংয়ের জন্য Parent থেকে existing questions পাঠাতে হবে
+  existingQuestions = [] // 🚀 ডুপ্লিকেট চেকিংয়ের জন্য Parent থেকে existing questions পাঠাতে হবে
 }) {
 
   // 🚀 ১. EXCEL TEMPLATE DOWNLOAD LOGIC
@@ -136,7 +136,7 @@ export default function ExcelTemplateUpload({
                 importance = 3; // Default fallback if invalid
               }
 
-              // 🔴 VALIDATION 5: Robust Board Parsing (Using lastIndexOf)
+              // 🔴 VALIDATION 5: Robust Board Parsing
               let validBoardTags = [];
               if (row.Board_Tags) {
                 const tags = String(row.Board_Tags).split(',');
@@ -153,10 +153,18 @@ export default function ExcelTemplateUpload({
 
                   if (!boardName || isNaN(year)) throw new Error(`Invalid board name or year in tag: "${tagTrimmed}".`);
 
-                  const foundBoard = boards.find(b => 
-                    b.short_name?.toLowerCase() === boardName.toLowerCase() || 
-                    b.name?.toLowerCase() === boardName.toLowerCase()
-                  );
+                  // 🛠️ FIX: Includes search to match "Dhaka" with "Dhaka Board"
+                  const foundBoard = boards.find(b => {
+                    const dbName = (b.name || '').toLowerCase();
+                    const dbShort = (b.short_name || '').toLowerCase();
+                    const target = boardName.toLowerCase();
+
+                    return (
+                      dbName === target || 
+                      dbShort === target || 
+                      dbName.includes(target)
+                    );
+                  });
 
                   if (!foundBoard) throw new Error(`Board not found in database: "${boardName}".`);
                   

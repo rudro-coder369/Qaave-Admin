@@ -2,7 +2,7 @@ import React from 'react';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { UploadCloud } from 'lucide-react';
-import { questionService } from '../../services/questionService'; // ⚠️ পাথটি আপনার ফোল্ডার অনুযায়ী ঠিক করে নেবেন
+import { questionService } from '../../services/questionService'; 
 
 export default function ExcelTemplateUpload({ 
   selectedSub, 
@@ -12,10 +12,9 @@ export default function ExcelTemplateUpload({
   fetchQuestions, 
   isSavingQuestion, 
   setIsSavingQuestion,
-  existingQuestions = [] // 🚀 ডুপ্লিকেট চেকিংয়ের জন্য Parent থেকে existing questions পাঠাতে হবে
+  existingQuestions = [] 
 }) {
 
-  // 🚀 ১. EXCEL TEMPLATE DOWNLOAD LOGIC
   const downloadSpecificTemplate = (type) => {
     let templateData = [];
     let fileName = "";
@@ -41,7 +40,6 @@ export default function ExcelTemplateUpload({
     toast.success(`${fileName} Downloaded!`);
   };
 
-  // 🚀 Helper: Generate Error Log Excel
   const downloadErrorLog = (failedRows) => {
     const errorData = failedRows.map(r => ({
       Row_Number: r.rowNumber,
@@ -54,7 +52,18 @@ export default function ExcelTemplateUpload({
     XLSX.writeFile(workbook, "Qaave_Upload_Error_Log.xlsx");
   };
 
-  // 🚀 ২. EXCEL UPLOAD & PARSING LOGIC (Optimized & Validated)
+  // 🚀 FIXED: Removed .sort() to preserve exact option positions
+  const getSignature = (type, text, optionsArr = []) => {
+    const normalizedText = String(text || '').trim().toLowerCase();
+    if (type === 'mcq') {
+      const optStr = optionsArr.map(o => String(o.text || '').trim().toLowerCase()).join('|');
+      const correctOpt = optionsArr.find(o => o.isCorrect);
+      const correctStr = correctOpt ? String(correctOpt.text || '').trim().toLowerCase() : '';
+      return `mcq|${normalizedText}|${optStr}|correct:${correctStr}`;
+    }
+    return `${type}|${normalizedText}`;
+  };
+
   const handleExcelUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -76,44 +85,43 @@ export default function ExcelTemplateUpload({
         toast.loading(`Processing 0 / ${totalRows}...`, { id: "excel-upload" });
         
         let successCount = 0;
+        let mergedCount = 0;
+        let skippedCount = 0;
         let failedRows = [];
         let processedCount = 0;
         
-        // 🚀 Duplicate Prevention Sets
-        const existingTextSet = new Set(existingQuestions.map(q => q.question_text.trim().toLowerCase()));
-        const fileTextSet = new Set(); // Prevent duplicates within the file itself
+        const existingMap = new Map();
+        existingQuestions.forEach(q => {
+          let optsForSig = [];
+          if (q.q_type === 'mcq' && q.mcq_options) {
+            optsForSig = q.mcq_options.map(o => ({ text: o.option_text, isCorrect: o.is_correct }));
+          }
+          const sig = getSignature(q.q_type, q.question_text, optsForSig);
+          existingMap.set(sig, q);
+        });
 
-        // 🚀 Chunk / Batch Processing Setup
-        const BATCH_SIZE = 15; // ১৫টি করে প্রশ্ন একসাথে আপলোড হবে
+        const fileMap = new Map(); 
+
+        const BATCH_SIZE = 15; 
         
         for (let i = 0; i < totalRows; i += BATCH_SIZE) {
           const batch = rawData.slice(i, i + BATCH_SIZE);
           
           const batchPromises = batch.map(async (row, index) => {
-            const rowNum = i + index + 2; // Header is row 1
+            const rowNum = i + index + 2; 
             const text = String(row.Question_Stem || row.Stem_Text || '').trim();
 
             try {
-              // 🔴 VALIDATION 1: Empty Question
               if (!text) throw new Error("Empty Question_Stem or Stem_Text.");
-
-              // 🔴 VALIDATION 2: Duplicate Detection
-              const normalizedText = text.toLowerCase();
-              if (existingTextSet.has(normalizedText)) throw new Error("Duplicate: Question already exists in database.");
-              if (fileTextSet.has(normalizedText)) throw new Error("Duplicate: Question appears multiple times in this Excel file.");
-              fileTextSet.add(normalizedText);
 
               const rowQType = String(row.Type || 'mcq').toLowerCase().trim();
               
-              // 🔴 VALIDATION 3: Options (If MCQ)
               let optionsArray = null;
               let rowMcqStatements = null;
               
               if (rowQType === 'mcq') {
                 const correctOpt = String(row.Correct_Option_ABCD || '').trim().toUpperCase();
-                if (!['A', 'B', 'C', 'D'].includes(correctOpt)) {
-                  throw new Error(`Invalid Correct_Option_ABCD: "${correctOpt}". Must be A, B, C, or D.`);
-                }
+                if (!['A', 'B', 'C', 'D'].includes(correctOpt)) throw new Error(`Invalid Correct_Option: "${correctOpt}".`);
                 
                 optionsArray = [
                   { text: String(row.Option_A || '').trim(), isCorrect: correctOpt === 'A' },
@@ -126,17 +134,13 @@ export default function ExcelTemplateUpload({
 
                 if (row.Statement_i || row.Statement_ii || row.Statement_iii) {
                    rowMcqStatements = [String(row.Statement_i || ''), String(row.Statement_ii || ''), String(row.Statement_iii || '')];
-                   if (rowMcqStatements.some(s => !s.trim())) throw new Error("Multiple completion requires all 3 statements to be filled.");
+                   if (rowMcqStatements.some(s => !s.trim())) throw new Error("Multiple completion requires all 3 statements.");
                 }
               }
 
-              // 🔴 VALIDATION 4: Importance Rating
               let importance = parseInt(row.Importance_1_to_5);
-              if (isNaN(importance) || importance < 1 || importance > 5) {
-                importance = 3; // Default fallback if invalid
-              }
+              if (isNaN(importance) || importance < 1 || importance > 5) importance = 3; 
 
-              // 🔴 VALIDATION 5: Robust Board Parsing
               let validBoardTags = [];
               if (row.Board_Tags) {
                 const tags = String(row.Board_Tags).split(',');
@@ -145,29 +149,21 @@ export default function ExcelTemplateUpload({
                   if (!tagTrimmed) continue;
 
                   const lastDashIdx = tagTrimmed.lastIndexOf('-');
-                  if (lastDashIdx === -1) throw new Error(`Invalid board tag: "${tagTrimmed}". Format must be BoardName-Year.`);
+                  if (lastDashIdx === -1) throw new Error(`Invalid board tag format: "${tagTrimmed}".`);
                   
                   const boardName = tagTrimmed.substring(0, lastDashIdx).trim();
-                  const yearStr = tagTrimmed.substring(lastDashIdx + 1).trim();
-                  const year = parseInt(yearStr);
+                  const year = parseInt(tagTrimmed.substring(lastDashIdx + 1).trim());
 
                   if (!boardName || isNaN(year)) throw new Error(`Invalid board name or year in tag: "${tagTrimmed}".`);
 
-                  // 🛠️ FIX: Includes search to match "Dhaka" with "Dhaka Board"
                   const foundBoard = boards.find(b => {
-                    const dbName = (b.name || '').toLowerCase();
-                    const dbShort = (b.short_name || '').toLowerCase();
                     const target = boardName.toLowerCase();
-
-                    return (
-                      dbName === target || 
-                      dbShort === target || 
-                      dbName.includes(target)
-                    );
+                    return (b.name || '').toLowerCase() === target || 
+                           (b.short_name || '').toLowerCase() === target || 
+                           (b.name || '').toLowerCase().includes(target);
                   });
 
-                  if (!foundBoard) throw new Error(`Board not found in database: "${boardName}".`);
-                  
+                  if (!foundBoard) throw new Error(`Board not found: "${boardName}".`);
                   validBoardTags.push({ boardId: foundBoard.id, year });
                 }
               }
@@ -177,12 +173,9 @@ export default function ExcelTemplateUpload({
                 { label: 'g', qText: row.Q_G || '', aText: row.Ans_G || '' }, { label: 'gh', qText: row.Q_Gh || '', aText: row.Ans_Gh || '' }
               ] : null;
               
-              if (rowQType === 'cq' && rowCqParts.some(p => !p.qText.trim())) {
-                throw new Error("CQ missing one or more questions (k, kh, g, gh).");
-              }
+              if (rowQType === 'cq' && rowCqParts.some(p => !p.qText.trim())) throw new Error("CQ missing questions.");
               
-              // Proceed to Insert
-              await questionService.addQuestion({
+              const payload = {
                 subjectId: selectedSub, chapterId: selectedChap, topicId: selectedTop || null,
                 qType: rowQType, text: text, imagePath: row.Image_URL || null,
                 explanation: String(row.Explanation || '').trim(), 
@@ -190,38 +183,97 @@ export default function ExcelTemplateUpload({
                 importance: importance, 
                 isExamMaterial: String(row.Is_Exam_Material).toUpperCase() === 'TRUE',
                 isContentMaterial: String(row.Is_Content_Material).toUpperCase() === 'TRUE', 
-                optionsArray, cqParts: rowCqParts, boardTags: validBoardTags,
-                mcqStatements: rowMcqStatements
-              });
-              
-              return { success: true };
+                optionsArray, cqParts: rowCqParts, mcqStatements: rowMcqStatements
+              };
+
+              const rowSignature = getSignature(rowQType, text, optionsArray);
+              let existingQ = existingMap.get(rowSignature) || fileMap.get(rowSignature);
+
+              if (existingQ) {
+                let existingBoards = [];
+                if (existingQ.question_board_history) {
+                  existingBoards = existingQ.question_board_history.map(h => ({
+                    boardId: h.board_id || h.boardId, 
+                    year: parseInt(h.year)
+                  }));
+                }
+
+                const mergedBoardsMap = new Map();
+                existingBoards.forEach(b => mergedBoardsMap.set(`${b.boardId}-${b.year}`, b));
+
+                let hasNewBoard = false;
+                let boardsToInsert = [];
+
+                validBoardTags.forEach(b => {
+                  const key = `${b.boardId}-${b.year}`;
+                  if (!mergedBoardsMap.has(key)) {
+                    mergedBoardsMap.set(key, b);
+                    boardsToInsert.push(b);
+                    hasNewBoard = true;
+                  }
+                });
+
+                if (!hasNewBoard) {
+                  throw new Error("SKIPPED: Exact question with identical options & boards already exists.");
+                } else {
+                  // 🚀 FIXED: Send ONLY the new boards to be UPSERTED, avoiding DELETE+INSERT logic
+                  await questionService.mergeBoardTags(existingQ.id, boardsToInsert);
+                  
+                  const updatedBoardHistory = Array.from(mergedBoardsMap.values());
+                  existingQ.question_board_history = updatedBoardHistory.map(b => ({ board_id: b.boardId, year: b.year }));
+                  
+                  existingMap.set(rowSignature, existingQ); 
+                  fileMap.set(rowSignature, existingQ);
+                  
+                  return { success: true, merged: true };
+                }
+              } else {
+                const newQData = await questionService.addQuestion({ ...payload, boardTags: validBoardTags });
+                
+                const newObj = {
+                  id: newQData.id,
+                  q_type: rowQType,
+                  question_text: text,
+                  question_board_history: validBoardTags.map(b => ({ board_id: b.boardId, year: b.year }))
+                };
+                
+                existingMap.set(rowSignature, newObj); 
+                fileMap.set(rowSignature, newObj);
+
+                return { success: true, merged: false };
+              }
 
             } catch (err) { 
+              if (err.message.startsWith("SKIPPED:")) {
+                return { skipped: true, rowNumber: rowNum, text: text, reason: err.message };
+              }
               return { success: false, rowNumber: rowNum, text: text || 'Unknown', reason: err.message };
             }
           });
 
-          // Wait for the batch to finish
           const results = await Promise.all(batchPromises);
           
           results.forEach(res => {
-            if (res.success) successCount++;
-            else failedRows.push(res);
+            if (res.success) {
+              if (res.merged) mergedCount++;
+              else successCount++;
+            } else if (res.skipped) {
+              skippedCount++;
+            } else {
+              failedRows.push(res);
+            }
           });
 
           processedCount += batch.length;
           toast.loading(`Processing ${processedCount} / ${totalRows}...`, { id: "excel-upload" });
         }
         
-        // 🚀 Report Generation
         if (failedRows.length > 0) {
           console.error("Upload Error Report:", failedRows);
-          toast.error(`Uploaded: ${successCount}. Failed: ${failedRows.length}. Downloading Error Log...`, { id: "excel-upload", duration: 5000 });
+          toast.error(`Inserted: ${successCount}, Merged: ${mergedCount}, Skipped: ${skippedCount}, Failed: ${failedRows.length}. Downloading Log...`, { id: "excel-upload", duration: 6000 });
           downloadErrorLog(failedRows);
-        } else if (successCount > 0) {
-          toast.success(`Successfully uploaded all ${successCount} questions!`, { id: "excel-upload" });
         } else {
-          toast.error(`No questions were uploaded. Please check the format.`, { id: "excel-upload" });
+          toast.success(`Done! Inserted: ${successCount}, Boards Merged: ${mergedCount}, Skipped: ${skippedCount}.`, { id: "excel-upload", duration: 5000 });
         }
         
         fetchQuestions();
@@ -236,7 +288,6 @@ export default function ExcelTemplateUpload({
     e.target.value = null; 
   };
 
-  // 🚀 ৩. UI RENDER (Buttons)
   return (
     <div className="hidden lg:flex gap-2 items-center">
       <select 

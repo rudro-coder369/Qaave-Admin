@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { taxonomyApi } from '../../services/taxonomyService';
 import { questionService } from '../../services/questionService';
 import toast, { Toaster } from 'react-hot-toast';
-import { Plus, Zap, Image as ImageIcon, Trash2, BookOpen, Search, Layers, X, Loader2, CheckSquare, UploadCloud, Pencil, Star, Info } from 'lucide-react';
+import { Plus, Zap, Image as ImageIcon, Trash2, BookOpen, Search, Layers, X, Loader2, CheckSquare, UploadCloud, Pencil, Star, Info, Copy } from 'lucide-react';
 import ExcelTemplateUpload from './excell_tamplate_upload';
 
 export default function QuestionBank() {
@@ -22,6 +22,10 @@ export default function QuestionBank() {
   const [isSavingQuestion, setIsSavingQuestion] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [editingId, setEditingId] = useState(null); 
+
+  // Standalone Uploader State (For Excel / Quick URL)
+  const [standaloneImageUrl, setStandaloneImageUrl] = useState('');
+  const [isUploadingStandalone, setIsUploadingStandalone] = useState(false);
 
   // Form States
   const [qType, setQType] = useState('mcq');
@@ -184,6 +188,28 @@ export default function QuestionBank() {
     } catch (error) { toast.error("Failed to delete: " + error.message); }
   };
 
+  // Standalone Image Uploader Logic (For Excel URLs)
+  const handleStandaloneImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      setIsUploadingStandalone(true);
+      toast.loading("Generating URL...", { id: "std-img-upload" });
+      const imageUrl = await questionService.uploadImageToCloudinary(file);
+      setStandaloneImageUrl(imageUrl);
+      
+      // Automatically copy to clipboard for convenience
+      navigator.clipboard.writeText(imageUrl);
+      toast.success("Image URL Copied to Clipboard!", { id: "std-img-upload" });
+    } catch (error) {
+      toast.error(error.message, { id: "std-img-upload" });
+    } finally {
+      setIsUploadingStandalone(false);
+      e.target.value = null; 
+    }
+  };
+
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -277,58 +303,83 @@ export default function QuestionBank() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-100px)] text-slate-200 font-sans">
+    // 🚀 Made wrapper responsive: min-h-screen for mobile, fixed 100vh on lg
+    <div className="flex flex-col h-auto min-h-[calc(100vh-100px)] lg:h-[calc(100vh-100px)] lg:min-h-0 text-slate-200 font-sans overflow-y-auto lg:overflow-hidden p-2 lg:p-0">
       <Toaster position="top-right" toastOptions={{ style: { background: '#0B0F19', color: '#f8fafc', border: '1px solid #1E293B' } }} />
       
-      {/* 🚀 HEADER & NAVIGATION (Deep Dark Theme) */}
-      <div className="bg-[#0B0F19] px-6 py-4 rounded-2xl border border-[#1E293B] mb-4 flex flex-col lg:flex-row items-center justify-between gap-4 shrink-0 shadow-lg">
-        <div className="flex items-center gap-3 w-full lg:w-auto">
-          <div className="p-2 bg-[#2563EB]/10 rounded border border-[#2563EB]/20"><DatabaseIcon className="w-5 h-5 text-[#2563EB]" /></div>
-          <div>
-            <h1 className="text-lg font-black text-white tracking-tight leading-tight">Question Database</h1>
+      {/* 🚀 HEADER & NAVIGATION */}
+      <div className="bg-[#0B0F19] p-4 lg:px-6 rounded-2xl border border-[#1E293B] mb-4 flex flex-col items-center justify-between gap-4 shrink-0 shadow-lg w-full">
+        
+        <div className="flex flex-col md:flex-row items-center justify-between w-full gap-4">
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="p-2 bg-[#2563EB]/10 rounded border border-[#2563EB]/20 shrink-0"><DatabaseIcon className="w-5 h-5 text-[#2563EB]" /></div>
+            <div>
+              <h1 className="text-base sm:text-lg font-black text-white tracking-tight leading-tight">Question Database</h1>
+            </div>
+          </div>
+
+          {/* 🌟 NEW: Standalone Image Uploader for URL Generation */}
+          <div className="flex items-center gap-2 bg-[#07090E] p-1.5 rounded-xl border border-[#1E293B] w-full md:w-auto overflow-hidden">
+            <label className={`cursor-pointer px-3 py-2 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap ${isUploadingStandalone ? 'text-slate-600 cursor-not-allowed' : 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20'}`}>
+              {isUploadingStandalone ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
+              {isUploadingStandalone ? 'Generating...' : 'Get Image URL'}
+              <input type="file" accept="image/*" className="hidden" onChange={handleStandaloneImageUpload} disabled={isUploadingStandalone} />
+            </label>
+            {standaloneImageUrl && (
+              <div className="flex items-center gap-2 px-2 overflow-hidden max-w-[150px] sm:max-w-[200px]">
+                <input type="text" readOnly value={standaloneImageUrl} className="bg-transparent border-none text-[10px] text-slate-400 w-full outline-none truncate" onClick={(e) => e.target.select()} title={standaloneImageUrl} />
+                <button type="button" onClick={() => {navigator.clipboard.writeText(standaloneImageUrl); toast.success("Copied!");}} className="text-[#2563EB] hover:text-white p-1 shrink-0" title="Copy URL">
+                  <Copy className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row flex-1 w-full lg:max-w-2xl gap-3">
-          <select className="flex-1 p-2.5 bg-[#07090E] border border-[#1E293B] rounded-xl focus:border-[#2563EB] outline-none text-xs font-bold text-slate-200 transition-colors shadow-inner" value={selectedSub} onChange={handleSubjectChange}>
+        <div className="flex flex-col md:flex-row flex-1 w-full lg:max-w-4xl gap-3">
+          <select className="flex-1 p-2.5 sm:p-3 lg:p-2.5 bg-[#07090E] border border-[#1E293B] rounded-xl focus:border-[#2563EB] outline-none text-xs sm:text-sm lg:text-xs font-bold text-slate-200 transition-colors shadow-inner" value={selectedSub} onChange={handleSubjectChange}>
             <option value="" className="bg-[#07090E] text-slate-500">1. Select Subject</option>
             {subjects.map(s => <option key={s.id} value={s.id} className="bg-[#07090E] text-slate-200">{s.name}</option>)}
           </select>
-          <select className="flex-1 p-2.5 bg-[#07090E] border border-[#1E293B] rounded-xl focus:border-[#2563EB] outline-none disabled:opacity-50 text-xs font-bold text-slate-200 transition-colors shadow-inner" value={selectedChap} onChange={handleChapterChange} disabled={!selectedSub}>
+          <select className="flex-1 p-2.5 sm:p-3 lg:p-2.5 bg-[#07090E] border border-[#1E293B] rounded-xl focus:border-[#2563EB] outline-none disabled:opacity-50 text-xs sm:text-sm lg:text-xs font-bold text-slate-200 transition-colors shadow-inner" value={selectedChap} onChange={handleChapterChange} disabled={!selectedSub}>
             <option value="" className="bg-[#07090E] text-slate-500">2. Select Chapter</option>
             {renderChapterOptions()}
           </select>
-          <select className="flex-1 p-2.5 bg-[#07090E] border border-[#1E293B] rounded-xl focus:border-[#2563EB] outline-none disabled:opacity-50 text-xs font-bold text-slate-200 transition-colors shadow-inner" value={selectedTop} onChange={handleTopicChange} disabled={!selectedChap}>
+          <select className="flex-1 p-2.5 sm:p-3 lg:p-2.5 bg-[#07090E] border border-[#1E293B] rounded-xl focus:border-[#2563EB] outline-none disabled:opacity-50 text-xs sm:text-sm lg:text-xs font-bold text-slate-200 transition-colors shadow-inner" value={selectedTop} onChange={handleTopicChange} disabled={!selectedChap}>
             <option value="" className="bg-[#07090E] text-slate-500">3. Filter by Topic (Optional)</option>
             {topics.map(t => <option key={t.id} value={t.id} className="bg-[#07090E] text-slate-200">{t.topic_order}. {t.title}</option>)}
           </select>
         </div>
 
         {selectedChap && (
-          <ExcelTemplateUpload 
-            selectedSub={selectedSub}
-            selectedChap={selectedChap}
-            selectedTop={selectedTop}
-            boards={boards}
-            fetchQuestions={() => questionService.getQuestions(selectedChap, selectedTop || null).then(setQuestions)}
-            isSavingQuestion={isSavingQuestion}
-            setIsSavingQuestion={setIsSavingQuestion}
-            existingQuestions={questions} 
-          />
+          <div className="w-full lg:w-auto">
+            <ExcelTemplateUpload 
+              selectedSub={selectedSub}
+              selectedChap={selectedChap}
+              selectedTop={selectedTop}
+              boards={boards}
+              fetchQuestions={() => questionService.getQuestions(selectedChap, selectedTop || null).then(setQuestions)}
+              isSavingQuestion={isSavingQuestion}
+              setIsSavingQuestion={setIsSavingQuestion}
+              existingQuestions={questions} 
+            />
+          </div>
         )}
       </div>
 
       {!selectedChap ? (
-        <div className="flex-1 flex flex-col items-center justify-center bg-[#0B0F19] rounded-2xl border border-[#1E293B] text-slate-500 shadow-inner">
+        <div className="flex-1 flex flex-col items-center justify-center bg-[#0B0F19] rounded-2xl border border-[#1E293B] text-slate-500 shadow-inner py-10 lg:py-0">
           <Search className="w-10 h-10 text-[#2563EB] mb-3 opacity-30" />
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Select Subject & Chapter to view repository</p>
+          <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-500 text-center px-4">Select Subject & Chapter to view repository</p>
         </div>
       ) : (
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 min-h-0 pb-2">
+        // 🚀 Responsive Grid: flex-col on mobile, grid on lg
+        <div className="flex-1 flex flex-col lg:grid lg:grid-cols-12 gap-5 min-h-0 pb-2">
           
-          {/* 🚀 LIVE REPOSITORY LIST (Dark Theme) */}
-          <div className="lg:col-span-7 flex flex-col bg-[#0B0F19] rounded-3xl border border-[#1E293B] overflow-hidden shadow-lg">
-             <div className="p-4 bg-[#07090E] border-b border-[#1E293B] flex justify-between items-center shrink-0">
+          {/* 🚀 LIVE REPOSITORY LIST */}
+          {/* Mobile height 60vh, lg: full height */}
+          <div className="lg:col-span-7 flex flex-col h-[60vh] lg:h-full bg-[#0B0F19] rounded-3xl border border-[#1E293B] overflow-hidden shadow-lg shrink-0 lg:shrink">
+             <div className="p-3 sm:p-4 bg-[#07090E] border-b border-[#1E293B] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shrink-0">
               <span className="text-[11px] font-black text-slate-300 uppercase tracking-widest flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-[#2563EB]" /> Database List
               </span>
@@ -340,26 +391,26 @@ export default function QuestionBank() {
               </div>
             </div>
             
-            <div className="flex-1 p-4 overflow-y-auto space-y-4 custom-scrollbar">
+            <div className="flex-1 p-3 sm:p-4 overflow-y-auto space-y-4 custom-scrollbar">
               {isFetchingQuestions ? (
                 <div className="flex flex-col items-center justify-center h-full text-slate-500"><Loader2 className="w-8 h-8 animate-spin text-[#2563EB] mb-3" /><span className="text-xs font-bold uppercase tracking-widest">Loading data...</span></div>
               ) : questions.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-slate-500 opacity-50"><FolderOpenIcon className="w-12 h-12 mb-3" /><span className="text-[10px] font-black uppercase tracking-widest">No questions found</span></div>
               ) : (
                 questions.map((q, idx) => (
-                  <div key={q.id} className={`p-5 rounded-2xl border transition-all duration-200 group relative ${editingId === q.id ? 'bg-[#2563EB]/10 border-[#2563EB]/50 shadow-[0_0_15px_rgba(37,99,235,0.1)]' : 'bg-[#07090E]/60 border-[#1E293B] hover:border-slate-600'}`}>
-                    <div className="absolute top-4 right-4 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                      <button onClick={() => handleEditClick(q)} className="p-2 text-[#2563EB] bg-[#2563EB]/10 rounded-lg hover:bg-[#2563EB] hover:text-white transition-colors" title="Edit"><Pencil className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => handleDeleteQuestion(q.id)} className="p-2 text-rose-500 bg-rose-500/10 rounded-lg hover:bg-rose-500 hover:text-white transition-colors" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <div key={q.id} className={`p-4 sm:p-5 rounded-2xl border transition-all duration-200 group relative ${editingId === q.id ? 'bg-[#2563EB]/10 border-[#2563EB]/50 shadow-[0_0_15px_rgba(37,99,235,0.1)]' : 'bg-[#07090E]/60 border-[#1E293B] hover:border-slate-600'}`}>
+                    {/* Make action buttons always visible on touch devices (mobile), hover on PC */}
+                    <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1.5 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                      <button onClick={() => handleEditClick(q)} className="p-2 text-[#2563EB] bg-[#2563EB]/10 rounded-lg hover:bg-[#2563EB] hover:text-white transition-colors" title="Edit"><Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
+                      <button onClick={() => handleDeleteQuestion(q.id)} className="p-2 text-rose-500 bg-rose-500/10 rounded-lg hover:bg-rose-500 hover:text-white transition-colors" title="Delete"><Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
                     </div>
 
-                    <div className="mb-4 pr-20 flex flex-wrap gap-2 items-center">
+                    <div className="mb-4 pr-16 sm:pr-20 flex flex-wrap gap-2 items-center">
                       <span className="text-[9px] font-black text-slate-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">{q.q_type.toUpperCase()}</span>
                       {q.is_exam_material && <span className="text-[9px] font-black text-rose-300 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">PRACTICE</span>}
                       {q.is_content_material && <span className="text-[9px] font-bold text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">CONTENT</span>}
                       {q.importance >= 3 && <span className="text-[9px] font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 flex items-center gap-1"><Star className="w-3 h-3"/> EXAM</span>}
                       
-                      {/* 🚀 FIXED LOGIC FOR BOARDS */}
                       {q.question_board_history?.map((history, hIdx) => (
                         <span
                           key={`${history.boards?.id}-${history.year}-${hIdx}`}
@@ -371,10 +422,10 @@ export default function QuestionBank() {
                     </div>
 
                     <p className="text-slate-200 text-sm font-medium leading-relaxed mb-4"><span className="text-slate-500 font-black mr-2">{idx + 1}.</span>{q.question_text}</p>
-                    {q.question_image_path && <img src={q.question_image_path} alt="Question Graphic" className="max-h-40 object-contain mb-4 rounded-lg border border-[#1E293B]" />}
+                    {q.question_image_path && <img src={q.question_image_path} alt="Question Graphic" className="max-w-full max-h-40 object-contain mb-4 rounded-lg border border-[#1E293B]" />}
                     
                     {q.q_type === 'mcq' && q.mcq_statements && q.mcq_statements.length > 0 && (
-                      <div className="mt-2 mb-4 pl-4 py-2 border-l-2 border-[#1E293B] text-xs text-slate-300 space-y-2">
+                      <div className="mt-2 mb-4 pl-3 sm:pl-4 py-2 border-l-2 border-[#1E293B] text-xs text-slate-300 space-y-2">
                         <div className="flex gap-2"><span className="font-bold text-[#2563EB] w-4">i.</span> {q.mcq_statements[0]}</div>
                         <div className="flex gap-2"><span className="font-bold text-[#2563EB] w-4">ii.</span> {q.mcq_statements[1]}</div>
                         <div className="flex gap-2"><span className="font-bold text-[#2563EB] w-4">iii.</span> {q.mcq_statements[2]}</div>
@@ -385,9 +436,9 @@ export default function QuestionBank() {
                       <div className="mt-2">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {q.mcq_options?.map((opt, i) => (
-                            <div key={opt.id} className={`px-4 py-2.5 text-xs rounded-xl border flex items-start gap-3 ${opt.is_correct ? 'bg-[#2563EB]/10 border-[#2563EB]/40 text-blue-200 font-bold' : 'bg-[#0B0F19] border-[#1E293B] text-slate-400'}`}>
+                            <div key={opt.id} className={`px-3 sm:px-4 py-2.5 text-xs rounded-xl border flex items-start gap-3 ${opt.is_correct ? 'bg-[#2563EB]/10 border-[#2563EB]/40 text-blue-200 font-bold' : 'bg-[#0B0F19] border-[#1E293B] text-slate-400'}`}>
                               <span className={`flex items-center justify-center w-5 h-5 rounded-md text-[10px] font-black shrink-0 ${opt.is_correct ? 'bg-[#2563EB] text-white shadow-md shadow-[#2563EB]/20' : 'bg-slate-800 text-slate-300'}`}>{String.fromCharCode(65 + i)}</span>
-                              <span className="leading-snug mt-0.5">{opt.option_text}</span>
+                              <span className="leading-snug mt-0.5 break-words overflow-hidden">{opt.option_text}</span>
                             </div>
                           ))}
                         </div>
@@ -400,9 +451,9 @@ export default function QuestionBank() {
                     )}
 
                     {q.q_type === 'cq' && (
-                      <div className="mt-4 space-y-3 bg-[#0B0F19] p-4 rounded-xl border border-[#1E293B]">
+                      <div className="mt-4 space-y-3 bg-[#0B0F19] p-3 sm:p-4 rounded-xl border border-[#1E293B]">
                         {q.cq_parts?.map(p => (
-                          <div className="text-xs" key={p.id}>
+                          <div className="text-xs break-words" key={p.id}>
                             <span className="text-[#2563EB] font-black mr-2 uppercase">({p.label})</span> <span className="text-slate-200 font-medium">{p.question_text}</span>
                             {p.answer_text && <div className="pl-7 text-slate-400 mt-1.5"><span className="text-emerald-500/70 font-black text-[9px] uppercase tracking-widest mr-2">ANS:</span> {p.answer_text}</div>}
                           </div>
@@ -411,7 +462,7 @@ export default function QuestionBank() {
                     )}
 
                     {['sq', 'written'].includes(q.q_type) && (
-                      <div className="mt-4 text-xs bg-[#0B0F19] p-4 rounded-xl border border-[#1E293B] text-slate-300 leading-relaxed font-medium">
+                      <div className="mt-4 text-xs bg-[#0B0F19] p-3 sm:p-4 rounded-xl border border-[#1E293B] text-slate-300 leading-relaxed font-medium break-words">
                         <strong className="text-slate-500 font-black uppercase tracking-widest text-[10px] mr-2">Answer:</strong> {q.solution}
                       </div>
                     )}
@@ -421,28 +472,30 @@ export default function QuestionBank() {
             </div>
           </div>
 
-          {/* 🚀 ADD / EDIT DATA ENTRY FORM (Dark Theme) */}
-          <div className="lg:col-span-5 flex flex-col h-full overflow-hidden bg-[#0B0F19] rounded-3xl border border-[#1E293B] shadow-lg">
-            <div className="flex bg-[#07090E] p-2 border-b border-[#1E293B] shrink-0 rounded-t-3xl">
+          {/* 🚀 ADD / EDIT DATA ENTRY FORM */}
+          {/* Mobile height 75vh, lg: full height */}
+          <div className="lg:col-span-5 flex flex-col h-[75vh] lg:h-full overflow-hidden bg-[#0B0F19] rounded-3xl border border-[#1E293B] shadow-lg shrink-0 lg:shrink">
+            <div className="flex bg-[#07090E] p-1.5 sm:p-2 border-b border-[#1E293B] shrink-0 rounded-t-3xl overflow-x-auto custom-scrollbar">
               {[{ id: 'mcq', label: 'MCQ' }, { id: 'sq1', label: 'Short Q' }, { id: 'sq2', label: 'Written Q' }, { id: 'cq', label: 'Creative' }].map(tab => (
-                <button key={tab.id} type="button" onClick={() => setQType(tab.id)} className={`flex-1 py-2.5 text-[11px] font-black uppercase tracking-widest transition-all rounded-xl ${qType === tab.id ? 'bg-[#2563EB] text-white shadow-md shadow-[#2563EB]/20' : 'text-slate-500 hover:text-slate-200 hover:bg-[#1E293B]/50'}`}>{tab.label}</button>
+                <button key={tab.id} type="button" onClick={() => setQType(tab.id)} className={`flex-1 min-w-[80px] py-2 sm:py-2.5 text-[10px] sm:text-[11px] font-black uppercase tracking-widest transition-all rounded-xl ${qType === tab.id ? 'bg-[#2563EB] text-white shadow-md shadow-[#2563EB]/20' : 'text-slate-500 hover:text-slate-200 hover:bg-[#1E293B]/50'}`}>{tab.label}</button>
               ))}
             </div>
 
-            <form onSubmit={handleAddOrUpdateQuestion} className="flex-1 overflow-y-auto flex flex-col p-5 gap-6 custom-scrollbar">
+            <form onSubmit={handleAddOrUpdateQuestion} className="flex-1 overflow-y-auto flex flex-col p-4 sm:p-5 gap-5 sm:gap-6 custom-scrollbar">
               
               <div className="flex flex-col gap-3">
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Main Question / Stem</label>
-                <textarea required className="w-full p-4 bg-[#07090E] border border-[#1E293B] rounded-2xl focus:border-[#2563EB] outline-none resize-y min-h-[120px] text-sm text-slate-200 font-medium placeholder:text-slate-600 shadow-inner" value={newQ.text} onChange={(e) => setNewQ({...newQ, text: e.target.value})} placeholder="Write the question or scenario here..."></textarea>
+                <textarea required className="w-full p-3 sm:p-4 bg-[#07090E] border border-[#1E293B] rounded-2xl focus:border-[#2563EB] outline-none resize-y min-h-[100px] sm:min-h-[120px] text-sm text-slate-200 font-medium placeholder:text-slate-600 shadow-inner" value={newQ.text} onChange={(e) => setNewQ({...newQ, text: e.target.value})} placeholder="Write the question or scenario here..."></textarea>
                 
                 {['mcq', 'cq'].includes(qType) && (
-                  <div className="flex items-center gap-3 bg-[#07090E] px-4 py-2.5 rounded-2xl border border-[#1E293B] focus-within:border-[#2563EB] shadow-inner">
+                  <div className="flex items-center gap-2 sm:gap-3 bg-[#07090E] px-3 py-2 sm:px-4 sm:py-2.5 rounded-2xl border border-[#1E293B] focus-within:border-[#2563EB] shadow-inner">
                     <ImageIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                    <input type="text" className="flex-1 bg-transparent border-none focus:ring-0 text-xs font-medium outline-none text-slate-200 placeholder-slate-600" placeholder="Paste image URL here..." value={newQ.imagePath || ''} onChange={(e) => setNewQ({...newQ, imagePath: e.target.value})} disabled={isUploadingImage} />
-                    <div className="w-px h-5 bg-[#1E293B]"></div>
-                    <label className={`cursor-pointer px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${isUploadingImage ? 'text-slate-600 cursor-not-allowed' : 'text-[#2563EB] bg-[#2563EB]/10 hover:bg-[#2563EB]/20'}`}>
+                    <input type="text" className="flex-1 min-w-0 bg-transparent border-none focus:ring-0 text-xs font-medium outline-none text-slate-200 placeholder-slate-600" placeholder="Paste image URL here..." value={newQ.imagePath || ''} onChange={(e) => setNewQ({...newQ, imagePath: e.target.value})} disabled={isUploadingImage} />
+                    <div className="w-px h-5 bg-[#1E293B] hidden sm:block"></div>
+                    <label className={`cursor-pointer px-2 sm:px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-1 sm:gap-2 shrink-0 ${isUploadingImage ? 'text-slate-600 cursor-not-allowed' : 'text-[#2563EB] bg-[#2563EB]/10 hover:bg-[#2563EB]/20'}`}>
                       {isUploadingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
-                      {isUploadingImage ? 'Uploading' : 'Upload File'}
+                      <span className="hidden sm:inline">{isUploadingImage ? 'Uploading' : 'Upload File'}</span>
+                      <span className="sm:hidden">{isUploadingImage ? '...' : 'Upload'}</span>
                       <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isUploadingImage} />
                     </label>
                   </div>
@@ -450,21 +503,21 @@ export default function QuestionBank() {
               </div>
 
               {qType === 'mcq' && (
-                <div className="flex flex-col gap-4 bg-[#07090E]/50 p-5 rounded-2xl border border-[#1E293B]">
+                <div className="flex flex-col gap-4 bg-[#07090E]/50 p-4 sm:p-5 rounded-2xl border border-[#1E293B]">
                   <label className="flex items-center gap-3 cursor-pointer w-max select-none group">
                     <input type="checkbox" className="hidden" checked={isPolyMCQ} onChange={(e) => setIsPolyMCQ(e.target.checked)} />
-                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${isPolyMCQ ? 'bg-[#2563EB] border-[#2563EB]' : 'bg-[#0B0F19] border-[#1E293B] group-hover:border-slate-500'}`}>
+                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors shrink-0 ${isPolyMCQ ? 'bg-[#2563EB] border-[#2563EB]' : 'bg-[#0B0F19] border-[#1E293B] group-hover:border-slate-500'}`}>
                       {isPolyMCQ && <CheckSquare className="w-3.5 h-3.5 text-white" />}
                     </div>
-                    <span className="text-xs font-bold text-slate-300">Enable Multiple Completion (i, ii, iii)</span>
+                    <span className="text-xs sm:text-sm font-bold text-slate-300">Enable Multiple Completion (i, ii, iii)</span>
                   </label>
                   
                   {isPolyMCQ && (
                     <div className="space-y-3 mt-1">
                       {mcqStatements.map((stmt, idx) => (
-                        <div key={idx} className="flex gap-3 items-center">
-                          <span className="text-xs font-black text-slate-500 w-6 uppercase">{['i.', 'ii.', 'iii.'][idx]}</span>
-                          <input type="text" className="flex-1 p-3 text-xs bg-[#0B0F19] border border-[#1E293B] rounded-xl focus:border-[#2563EB] outline-none text-slate-200 font-medium shadow-inner" placeholder={`Statement ${idx + 1}`} value={stmt} onChange={(e) => setMcqStatements(mcqStatements.map((s, i) => i === idx ? e.target.value : s))} required={isPolyMCQ} />
+                        <div key={idx} className="flex gap-2 sm:gap-3 items-center">
+                          <span className="text-xs font-black text-slate-500 w-6 uppercase shrink-0">{['i.', 'ii.', 'iii.'][idx]}</span>
+                          <input type="text" className="flex-1 p-2.5 sm:p-3 text-xs bg-[#0B0F19] border border-[#1E293B] rounded-xl focus:border-[#2563EB] outline-none text-slate-200 font-medium shadow-inner min-w-0" placeholder={`Statement ${idx + 1}`} value={stmt} onChange={(e) => setMcqStatements(mcqStatements.map((s, i) => i === idx ? e.target.value : s))} required={isPolyMCQ} />
                         </div>
                       ))}
                     </div>
@@ -474,17 +527,17 @@ export default function QuestionBank() {
 
               <div className="flex flex-col gap-4 border-t border-[#1E293B] pt-5">
                 {qType === 'mcq' && (
-                  <div className="space-y-4">
+                  <div className="space-y-3 sm:space-y-4">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Options (Select the correct one)</label>
                     {options.map((opt, idx) => (
-                      <div key={idx} className="flex items-center gap-3">
+                      <div key={idx} className="flex items-center gap-2 sm:gap-3">
                         <div onClick={() => setOptions(options.map((o, i) => ({...o, isCorrect: i===idx})))} className={`w-8 h-8 shrink-0 rounded-lg flex items-center justify-center cursor-pointer font-black text-xs transition-all ${opt.isCorrect ? 'bg-[#2563EB] text-white shadow-lg shadow-[#2563EB]/30' : 'bg-[#07090E] border border-[#1E293B] text-slate-500 hover:text-slate-300'}`}>{String.fromCharCode(65+idx)}</div>
-                        <input type="text" required className={`flex-1 p-3 text-xs font-medium rounded-xl outline-none transition-colors border shadow-inner ${opt.isCorrect ? 'bg-[#2563EB]/5 border-[#2563EB]/50 text-blue-200' : 'bg-[#07090E] border-[#1E293B] text-slate-300 focus:border-slate-500'}`} placeholder={`Option ${String.fromCharCode(65+idx)} text...`} value={opt.text} onChange={(e) => setOptions(options.map((o, i) => i === idx ? {...o, text: e.target.value} : o))} />
+                        <input type="text" required className={`flex-1 min-w-0 p-2.5 sm:p-3 text-xs font-medium rounded-xl outline-none transition-colors border shadow-inner ${opt.isCorrect ? 'bg-[#2563EB]/5 border-[#2563EB]/50 text-blue-200' : 'bg-[#07090E] border-[#1E293B] text-slate-300 focus:border-slate-500'}`} placeholder={`Option ${String.fromCharCode(65+idx)} text...`} value={opt.text} onChange={(e) => setOptions(options.map((o, i) => i === idx ? {...o, text: e.target.value} : o))} />
                       </div>
                     ))}
                     <div className="pt-3">
-                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3 block">Explanation (Optional)</label>
-                       <textarea className="w-full p-4 bg-[#07090E] border border-[#1E293B] rounded-2xl focus:border-[#2563EB] text-xs font-medium outline-none text-slate-300 resize-y min-h-[80px] shadow-inner" value={newQ.explanation} onChange={(e) => setNewQ({...newQ, explanation: e.target.value})} placeholder="Why is this answer correct?"></textarea>
+                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2 sm:mb-3 block">Explanation (Optional)</label>
+                       <textarea className="w-full p-3 sm:p-4 bg-[#07090E] border border-[#1E293B] rounded-2xl focus:border-[#2563EB] text-xs font-medium outline-none text-slate-300 resize-y min-h-[80px] shadow-inner" value={newQ.explanation} onChange={(e) => setNewQ({...newQ, explanation: e.target.value})} placeholder="Why is this answer correct?"></textarea>
                     </div>
                   </div>
                 )}
@@ -492,22 +545,22 @@ export default function QuestionBank() {
                 {['sq1', 'sq2'].includes(qType) && (
                   <div className="flex flex-col gap-3">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Exact Answer / Solution</label>
-                    <textarea required className="w-full p-4 bg-[#07090E] border border-[#1E293B] rounded-2xl focus:border-[#2563EB] outline-none resize-y min-h-[120px] text-sm text-slate-200 font-medium shadow-inner" placeholder="Provide direct answer or solution steps..." value={newQ.solution} onChange={(e) => setNewQ({...newQ, solution: e.target.value})}></textarea>
+                    <textarea required className="w-full p-3 sm:p-4 bg-[#07090E] border border-[#1E293B] rounded-2xl focus:border-[#2563EB] outline-none resize-y min-h-[100px] sm:min-h-[120px] text-sm text-slate-200 font-medium shadow-inner" placeholder="Provide direct answer or solution steps..." value={newQ.solution} onChange={(e) => setNewQ({...newQ, solution: e.target.value})}></textarea>
                   </div>
                 )}
 
                 {qType === 'cq' && (
-                  <div className="space-y-5">
+                  <div className="space-y-4 sm:space-y-5">
                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Creative Question Parts</label>
                     {cqParts.map((part, idx) => (
-                      <div key={idx} className="flex flex-col gap-3 bg-[#07090E]/50 p-4 rounded-2xl border border-[#1E293B]">
-                        <div className="flex gap-3 items-center">
-                          <span className="text-[10px] font-black text-[#2563EB] w-6 uppercase">({part.label})</span>
-                          <input type="text" required className="flex-1 p-3 text-xs bg-[#0B0F19] border border-[#1E293B] rounded-xl focus:border-[#2563EB] outline-none text-slate-200 font-medium shadow-inner" placeholder="Question text..." value={part.qText} onChange={(e) => setCqParts(cqParts.map((p, i) => i === idx ? {...p, qText: e.target.value} : p))} />
+                      <div key={idx} className="flex flex-col gap-3 bg-[#07090E]/50 p-3 sm:p-4 rounded-2xl border border-[#1E293B]">
+                        <div className="flex gap-2 sm:gap-3 items-center">
+                          <span className="text-[10px] font-black text-[#2563EB] w-5 sm:w-6 uppercase shrink-0">({part.label})</span>
+                          <input type="text" required className="flex-1 min-w-0 p-2.5 sm:p-3 text-xs bg-[#0B0F19] border border-[#1E293B] rounded-xl focus:border-[#2563EB] outline-none text-slate-200 font-medium shadow-inner" placeholder="Question text..." value={part.qText} onChange={(e) => setCqParts(cqParts.map((p, i) => i === idx ? {...p, qText: e.target.value} : p))} />
                         </div>
-                        <div className="flex gap-3 items-start">
-                          <span className="text-[10px] font-black text-slate-600 w-6 pt-3 uppercase">Ans:</span>
-                          <textarea required className="flex-1 p-3 text-xs bg-[#0B0F19] border border-[#1E293B] rounded-xl focus:border-emerald-500/50 outline-none text-slate-300 resize-y min-h-[60px] font-medium shadow-inner" placeholder="Answer..." value={part.aText} onChange={(e) => setCqParts(cqParts.map((p, i) => i === idx ? {...p, aText: e.target.value} : p))}></textarea>
+                        <div className="flex gap-2 sm:gap-3 items-start">
+                          <span className="text-[10px] font-black text-slate-600 w-5 sm:w-6 pt-3 uppercase shrink-0">Ans:</span>
+                          <textarea required className="flex-1 min-w-0 p-2.5 sm:p-3 text-xs bg-[#0B0F19] border border-[#1E293B] rounded-xl focus:border-emerald-500/50 outline-none text-slate-300 resize-y min-h-[60px] font-medium shadow-inner" placeholder="Answer..." value={part.aText} onChange={(e) => setCqParts(cqParts.map((p, i) => i === idx ? {...p, aText: e.target.value} : p))}></textarea>
                         </div>
                       </div>
                     ))}
@@ -517,33 +570,33 @@ export default function QuestionBank() {
 
               {['mcq', 'cq'].includes(qType) && (
                 <div className="border-t border-[#1E293B] pt-5">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between mb-3 sm:mb-4">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Board Assignments</label>
                   </div>
                   <div className="flex flex-wrap gap-2 mb-4">
                     {boards.map(b => (
-                      <button type="button" key={b.id} onClick={() => addBoardTag(b.id)} className="px-3 py-1.5 bg-[#07090E] border border-[#1E293B] rounded-lg hover:border-slate-500 text-[10px] font-bold text-slate-400 hover:text-white transition-colors">
+                      <button type="button" key={b.id} onClick={() => addBoardTag(b.id)} className="px-2.5 sm:px-3 py-1.5 bg-[#07090E] border border-[#1E293B] rounded-lg hover:border-slate-500 text-[10px] font-bold text-slate-400 hover:text-white transition-colors">
                         + {b.short_name || b.name}
                       </button>
                     ))}
                   </div>
 
                   {boardTags.length > 0 && (
-                    <div className="space-y-2 bg-[#07090E] p-4 rounded-2xl border border-[#1E293B]">
+                    <div className="space-y-2 bg-[#07090E] p-3 sm:p-4 rounded-2xl border border-[#1E293B]">
                       {boardTags.map(tag => (
-                         <div key={tag.tempId} className="flex items-center gap-3">
+                         <div key={tag.tempId} className="flex items-center gap-2 sm:gap-3">
                             <span className="text-xs font-bold text-slate-300 flex-1 truncate pl-1">
                               {boardsMap[tag.boardId]?.name || 'Board'}
                             </span>
                             <input 
                               type="number" 
                               min="1990" max="2099" 
-                              className="w-24 p-2 text-xs font-black bg-[#0B0F19] border border-[#1E293B] rounded-lg text-slate-200 outline-none focus:border-[#2563EB] text-center shadow-inner" 
+                              className="w-20 sm:w-24 p-2 text-xs font-black bg-[#0B0F19] border border-[#1E293B] rounded-lg text-slate-200 outline-none focus:border-[#2563EB] text-center shadow-inner" 
                               placeholder="Year" 
                               value={tag.year} 
                               onChange={(e) => updateBoardYear(tag.tempId, e.target.value)} 
                             />
-                            <button type="button" onClick={() => removeBoardTag(tag.tempId)} className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors"><X className="w-4 h-4" /></button>
+                            <button type="button" onClick={() => removeBoardTag(tag.tempId)} className="p-1.5 sm:p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors"><X className="w-4 h-4" /></button>
                          </div>
                       ))}
                     </div>
@@ -551,36 +604,38 @@ export default function QuestionBank() {
                 </div>
               )}
 
-              <div className="border-t border-[#1E293B] pt-5 flex gap-3">
-                <label className="flex-1 flex flex-col justify-center items-center gap-2 cursor-pointer p-3 rounded-2xl bg-[#07090E] border border-[#1E293B] hover:border-[#2563EB]/50 transition-colors select-none shadow-inner">
+              {/* Responsive flex direction for the toggles */}
+              <div className="border-t border-[#1E293B] pt-5 flex flex-col sm:flex-row gap-3">
+                <label className="flex-1 flex sm:flex-col flex-row justify-between sm:justify-center items-center gap-2 cursor-pointer p-3 rounded-2xl bg-[#07090E] border border-[#1E293B] hover:border-[#2563EB]/50 transition-colors select-none shadow-inner">
+                  <span className={`text-[10px] font-black uppercase tracking-widest order-2 sm:order-none ${newQ.isExamMaterial ? 'text-blue-300' : 'text-slate-500'}`}>Practice Flow</span>
                   <input type="checkbox" className="hidden" checked={newQ.isExamMaterial} onChange={(e) => setNewQ({...newQ, isExamMaterial: e.target.checked})} />
-                  <div className={`w-4 h-4 rounded-[4px] border transition-all flex items-center justify-center ${newQ.isExamMaterial ? 'bg-[#2563EB] border-[#2563EB] shadow-[0_0_10px_rgba(37,99,235,0.4)]' : 'bg-[#0B0F19] border-[#1E293B]'}`}>
+                  <div className={`w-4 h-4 rounded-[4px] border transition-all flex items-center justify-center order-1 sm:order-none ${newQ.isExamMaterial ? 'bg-[#2563EB] border-[#2563EB] shadow-[0_0_10px_rgba(37,99,235,0.4)]' : 'bg-[#0B0F19] border-[#1E293B]'}`}>
                      {newQ.isExamMaterial && <CheckSquare className="w-3 h-3 text-white" />}
                   </div>
-                  <span className={`text-[10px] font-black uppercase tracking-widest ${newQ.isExamMaterial ? 'text-blue-300' : 'text-slate-500'}`}>Practice Flow</span>
                 </label>
                 
-                <label className="flex-1 flex flex-col justify-center items-center gap-2 cursor-pointer p-3 rounded-2xl bg-[#07090E] border border-[#1E293B] hover:border-emerald-500/50 transition-colors select-none shadow-inner">
+                <label className="flex-1 flex sm:flex-col flex-row justify-between sm:justify-center items-center gap-2 cursor-pointer p-3 rounded-2xl bg-[#07090E] border border-[#1E293B] hover:border-emerald-500/50 transition-colors select-none shadow-inner">
+                  <span className={`text-[10px] font-black uppercase tracking-widest order-2 sm:order-none ${newQ.isContentMaterial ? 'text-emerald-300' : 'text-slate-500'}`}>Core Reading</span>
                   <input type="checkbox" className="hidden" checked={newQ.isContentMaterial} onChange={(e) => setNewQ({...newQ, isContentMaterial: e.target.checked})} />
-                  <div className={`w-4 h-4 rounded-[4px] border transition-all flex items-center justify-center ${newQ.isContentMaterial ? 'bg-emerald-500 border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-[#0B0F19] border-[#1E293B]'}`}>
+                  <div className={`w-4 h-4 rounded-[4px] border transition-all flex items-center justify-center order-1 sm:order-none ${newQ.isContentMaterial ? 'bg-emerald-500 border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-[#0B0F19] border-[#1E293B]'}`}>
                      {newQ.isContentMaterial && <CheckSquare className="w-3 h-3 text-white" />}
                   </div>
-                  <span className={`text-[10px] font-black uppercase tracking-widest ${newQ.isContentMaterial ? 'text-emerald-300' : 'text-slate-500'}`}>Core Reading</span>
                 </label>
 
-                <div className="flex-1 flex flex-col justify-center items-center gap-1.5 bg-[#07090E] border border-[#1E293B] rounded-2xl p-3 shadow-inner">
+                <div className="flex-1 flex sm:flex-col flex-row justify-between sm:justify-center items-center gap-1.5 bg-[#07090E] border border-[#1E293B] rounded-2xl p-3 shadow-inner">
                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Quality Rating</span>
-                   <select className="bg-transparent text-sm outline-none text-amber-400 font-bold text-center appearance-none cursor-pointer mt-0.5" value={newQ.importance} onChange={(e) => setNewQ({...newQ, importance: parseInt(e.target.value)})}>
+                   <select className="bg-transparent text-sm outline-none text-amber-400 font-bold text-right sm:text-center appearance-none cursor-pointer mt-0.5" value={newQ.importance} onChange={(e) => setNewQ({...newQ, importance: parseInt(e.target.value)})}>
                     {[1,2,3,4,5].map(n => <option key={n} value={n} className="bg-[#0B0F19] text-amber-400 font-sans tracking-widest">{'★'.repeat(n)}</option>)}
                    </select>
                 </div>
               </div>
 
-              <div className="mt-3 flex gap-3 pt-2">
+              {/* Responsive flex direction for the save buttons */}
+              <div className="mt-2 sm:mt-3 flex flex-col sm:flex-row gap-3 pt-2">
                 {editingId && (
-                  <button type="button" onClick={resetForm} className="px-6 py-3.5 bg-[#07090E] text-slate-400 hover:bg-[#1E293B] hover:text-white rounded-xl font-black text-[11px] uppercase tracking-widest transition-colors border border-[#1E293B]">Cancel Edit</button>
+                  <button type="button" onClick={resetForm} className="w-full sm:w-auto px-6 py-3.5 bg-[#07090E] text-slate-400 hover:bg-[#1E293B] hover:text-white rounded-xl font-black text-[11px] uppercase tracking-widest transition-colors border border-[#1E293B]">Cancel Edit</button>
                 )}
-                <button type="submit" disabled={isSavingQuestion || isUploadingImage} className="flex-1 py-3.5 bg-[#2563EB] text-white rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-blue-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#2563EB]/20">
+                <button type="submit" disabled={isSavingQuestion || isUploadingImage || isUploadingStandalone} className="flex-1 py-3.5 bg-[#2563EB] text-white rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-blue-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#2563EB]/20">
                   {(isSavingQuestion || isUploadingImage) ? <Loader2 className="w-4 h-4 animate-spin"/> : editingId ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
                   {isSavingQuestion ? 'Saving Data...' : isUploadingImage ? 'Uploading Image...' : editingId ? 'Update Question' : 'Save Question'}
                 </button>

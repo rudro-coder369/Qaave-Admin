@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { dashboardService } from '../../services/dashboardService';
-import { BookOpen, Layers, FileText, HelpCircle, Calendar, ArrowRight, Lightbulb, Sparkles, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { BookOpen, Layers, FileText, HelpCircle, Calendar, ArrowRight, Lightbulb, Sparkles, Activity, Database } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 export default function Dashboard() {
@@ -17,9 +17,6 @@ export default function Dashboard() {
     todaysCount: 0,
     currentDate: ''
   });
-
-  // ড্রপডাউন খোলার জন্য স্টেট
-  const [showTodayBreakdown, setShowTodayBreakdown] = useState(false);
 
   useEffect(() => {
     dashboardService.getDetailedStats().then((data) => {
@@ -91,82 +88,90 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 📈 Content Tracking */}
-      <div className="bg-[#0B0F19] p-6 md:p-8 rounded-3xl shadow-lg border border-[#1E293B] relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/5 rounded-full blur-3xl -z-10 pointer-events-none"></div>
+      {/* 🟢 SECTION 1: আজকের আপডেট (Today's Data Only) */}
+      <div className="bg-[#0B0F19] p-6 md:p-8 rounded-3xl shadow-lg border border-emerald-500/20 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-600/5 rounded-full blur-3xl -z-10 pointer-events-none"></div>
         
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 border-b border-slate-800 pb-6">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <div className="w-2 h-7 bg-[#2563EB] rounded-full shadow-[0_0_15px_rgba(37,99,235,0.6)]"></div>
-              <h2 className="text-xl font-black text-white tracking-tight">
-                কন্টেন্ট ট্র্যাকিং
+              <div className="w-2 h-7 bg-emerald-500 rounded-full shadow-[0_0_15px_rgba(16,185,129,0.4)]"></div>
+              <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+                আজকের আপডেট <Activity className="w-5 h-5 text-emerald-400" />
               </h2>
             </div>
-            <p className="text-slate-400 text-sm flex items-center gap-2">
-              <Clock className="w-4 h-4" /> 
-              আজকের তারিখ: <span className="text-blue-400 font-bold">{stats.currentDate || 'Loading...'}</span>
+            <p className="text-slate-400 text-sm">
+              তারিখ: <span className="text-emerald-400 font-bold">{stats.currentDate || 'Loading...'}</span>
             </p>
           </div>
 
-          <div className="flex items-center gap-4 bg-slate-800/30 p-2 rounded-2xl border border-slate-700/50">
-            {/* 🚀 ক্লিকেবল সেকশন (UX Improved) */}
-            <div 
-              className={`flex flex-col items-center justify-center cursor-pointer p-4 rounded-xl transition-all duration-300 group border ${showTodayBreakdown ? 'bg-slate-800 border-emerald-500/50 shadow-inner' : 'bg-slate-800/80 border-slate-600 hover:border-emerald-500/50 hover:bg-slate-700'}`}
-              onClick={() => setShowTodayBreakdown(!showTodayBreakdown)}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <p className="text-[10px] text-slate-300 font-extrabold uppercase tracking-widest">আজকে এড হয়েছে</p>
-                <div className="bg-slate-900/50 p-1 rounded-md group-hover:bg-emerald-500/20 transition-colors">
-                  {showTodayBreakdown ? <ChevronUp className="w-3 h-3 text-emerald-400" /> : <ChevronDown className="w-3 h-3 text-emerald-400" />}
-                </div>
-              </div>
-              <p className="text-3xl font-black text-emerald-400">
-                {stats.todaysCount} <span className="text-sm font-medium text-slate-500">টি প্রশ্ন</span>
-              </p>
-              <p className="text-[10px] text-emerald-500/70 mt-1 opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-2">
-                বিস্তারিত দেখুন
-              </p>
-            </div>
-            
-            <div className="h-16 w-[1px] bg-slate-700"></div>
-            
-            <div className="flex flex-col items-center justify-center p-4 min-w-[120px]">
-              <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest mb-1">সর্বমোট প্রশ্ন</p>
-              <p className="text-3xl font-black text-white">{stats.questionsCount}</p>
-            </div>
+          <div className="flex flex-col items-end justify-center bg-emerald-500/10 px-6 py-3 rounded-2xl border border-emerald-500/20">
+            <p className="text-[10px] text-emerald-400/80 font-extrabold uppercase tracking-widest mb-1">আজকে এড হয়েছে</p>
+            <p className="text-3xl font-black text-emerald-400">
+              {stats.todaysCount} <span className="text-sm font-medium text-emerald-500/70">টি প্রশ্ন</span>
+            </p>
           </div>
         </div>
 
-        {/* 🚀 আজকের সাবজেক্ট-ভিত্তিক হিসাব (Toggle Section) */}
-        {showTodayBreakdown && (
-          <div className="mb-8 p-5 bg-[#0F172A] rounded-2xl border border-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.05)] animate-in slide-in-from-top-4 fade-in duration-300">
-            <h3 className="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2 border-b border-slate-700/50 pb-3">
-              <Sparkles className="w-4 h-4 text-emerald-400" /> আজকের সাবজেক্ট-ভিত্তিক আপডেট:
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              {stats.subjectWise?.filter(sub => sub.todayCount > 0).length > 0 ? (
-                stats.subjectWise.filter(sub => sub.todayCount > 0).map(sub => (
-                  <div key={`today-${sub.id}`} className="flex justify-between items-center bg-slate-800/50 px-3 py-2 rounded-lg border border-emerald-500/20 hover:bg-slate-700/50 transition-colors">
-                    <span className="text-xs font-medium text-slate-300 truncate mr-2" title={sub.name}>{sub.name}</span>
-                    <span className="text-sm font-black text-emerald-400">+{sub.todayCount}</span>
-                  </div>
-                ))
-              ) : (
-                <div className="col-span-full text-center py-4 text-slate-500 text-xs font-medium">
-                  আজকে এখনো কোনো সাবজেক্টে প্রশ্ন যুক্ত করা হয়নি।
-                </div>
-              )}
+        {/* 🚀 Today's Subject-wise Grid (Sorted by todayCount) */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          {[...(stats.subjectWise || [])]
+            .sort((a, b) => (b.todayCount || 0) - (a.todayCount || 0)) // বেশি প্রশ্ন হওয়া সাবজেক্ট আগে দেখানোর লজিক
+            .map((subject) => (
+            <div 
+              key={`today-${subject.id}`} 
+              className="bg-slate-800/30 border border-slate-800 hover:border-emerald-500/50 transition-colors p-4 rounded-2xl flex flex-col items-center text-center group"
+            >
+              <span className="text-slate-300 font-semibold text-sm mb-3 group-hover:text-emerald-400 transition-colors w-full truncate">
+                {subject.name}
+              </span>
+              <span className="text-2xl font-black text-emerald-400 bg-emerald-500/10 px-4 py-2 rounded-xl w-full border border-emerald-500/10 shadow-inner">
+                +{subject.todayCount || 0}
+              </span>
             </div>
-          </div>
-        )}
+          ))}
+          
+          {stats.subjectWise?.length === 0 && (
+             <div className="col-span-full text-center py-6 text-slate-500 text-sm">
+               আজকে এখনো কোনো প্রশ্ন ডাটাবেসে এড করা হয়নি।
+             </div>
+          )}
+        </div>
+      </div>
 
-        {/* Subject-wise Breakdown Grid (Total) */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mt-6">
+      {/* 🔵 SECTION 2: সর্বমোট প্রশ্ন (Total Data Only) */}
+      <div className="bg-[#0B0F19] p-6 md:p-8 rounded-3xl shadow-lg border border-[#1E293B] relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/5 rounded-full blur-3xl -z-10 pointer-events-none"></div>
+        
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 border-b border-slate-800 pb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-7 bg-[#2563EB] rounded-full shadow-[0_0_15px_rgba(37,99,235,0.4)]"></div>
+            <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+              সর্বমোট প্রশ্ন <Database className="w-5 h-5 text-blue-500" />
+            </h2>
+          </div>
+
+          <div className="flex flex-col items-end justify-center bg-slate-800/50 px-6 py-3 rounded-2xl border border-slate-700/50">
+            <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest mb-1">মোট প্রশ্ন</p>
+            <p className="text-3xl font-black text-white">
+              {stats.questionsCount}
+            </p>
+          </div>
+        </div>
+
+        {/* Total Subject-wise Grid (Sorted by total count as coming from service) */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {stats.subjectWise?.map((subject) => (
-            <div key={subject.id} className="bg-slate-800/30 border border-slate-800 hover:border-[#2563EB]/50 transition-colors p-4 rounded-2xl flex flex-col justify-center items-center text-center group">
-              <span className="text-slate-300 font-semibold text-sm mb-2 group-hover:text-blue-400 transition-colors">{subject.name}</span>
-              <span className="text-xl font-black text-white bg-slate-800 px-3 py-1 rounded-lg shadow-inner">{subject.count}</span>
+            <div 
+              key={`total-${subject.id}`} 
+              className="bg-slate-800/30 border border-slate-800 hover:border-[#2563EB]/50 transition-colors p-4 rounded-2xl flex flex-col items-center text-center group"
+            >
+              <span className="text-slate-300 font-semibold text-sm mb-3 group-hover:text-blue-400 transition-colors w-full truncate">
+                {subject.name}
+              </span>
+              <span className="text-xl font-black text-white bg-slate-800 px-4 py-2 rounded-xl w-full shadow-inner">
+                {subject.count}
+              </span>
             </div>
           ))}
           

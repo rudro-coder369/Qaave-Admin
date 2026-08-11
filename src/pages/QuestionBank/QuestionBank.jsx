@@ -21,6 +21,10 @@ export default function QuestionBank() {
   const [isFetchingQuestions, setIsFetchingQuestions] = useState(false);
   const [isSavingQuestion, setIsSavingQuestion] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  
+  // 🔥 NEW: Track which specific input is currently uploading (e.g., 'stmt-0', 'opt-1', 'main')
+  const [uploadingTarget, setUploadingTarget] = useState(null); 
+  
   const [editingId, setEditingId] = useState(null); 
 
   // Standalone Uploader State (For Excel / Quick URL)
@@ -35,12 +39,17 @@ export default function QuestionBank() {
   });
   
   const [isPolyMCQ, setIsPolyMCQ] = useState(false);
-  const [mcqStatements, setMcqStatements] = useState(['', '', '']);
+  
+  const [mcqStatements, setMcqStatements] = useState([
+    { text: '', imagePath: '' }, 
+    { text: '', imagePath: '' }, 
+    { text: '', imagePath: '' }
+  ]);
   const [boardTags, setBoardTags] = useState([]);
 
   const [options, setOptions] = useState([
-    { text: '', isCorrect: true }, { text: '', isCorrect: false },
-    { text: '', isCorrect: false }, { text: '', isCorrect: false }
+    { text: '', imagePath: '', isCorrect: true }, { text: '', imagePath: '', isCorrect: false },
+    { text: '', imagePath: '', isCorrect: false }, { text: '', imagePath: '', isCorrect: false }
   ]);
   
   const [cqParts, setCqParts] = useState([
@@ -48,7 +57,6 @@ export default function QuestionBank() {
     { label: 'g', qText: '', aText: '' }, { label: 'gh', qText: '', aText: '' }
   ]);
 
-  // 🚀 O(1) Lookup for Boards (used for data entry mapping)
   const boardsMap = useMemo(() => {
     return boards.reduce((acc, board) => {
       acc[board.id] = board;
@@ -58,7 +66,6 @@ export default function QuestionBank() {
 
   const generateId = () => window.crypto?.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).substring(2);
 
-  // Initial Fetch
   useEffect(() => { 
     taxonomyApi.getSubjects().then(setSubjects).catch(err => toast.error("Failed to load subjects: " + err.message));
     questionService.getBoards().then(setBoards).catch(err => toast.error("Failed to load boards: " + err.message));
@@ -92,8 +99,11 @@ export default function QuestionBank() {
     setNewQ({ text: '', imagePath: '', explanation: '', solution: '', importance: 3, isExamMaterial: false, isContentMaterial: false });
     setBoardTags([]);
     setIsPolyMCQ(false);
-    setMcqStatements(['', '', '']);
-    setOptions([{ text: '', isCorrect: true }, { text: '', isCorrect: false }, { text: '', isCorrect: false }, { text: '', isCorrect: false }]);
+    setMcqStatements([{ text: '', imagePath: '' }, { text: '', imagePath: '' }, { text: '', imagePath: '' }]);
+    setOptions([
+      { text: '', imagePath: '', isCorrect: true }, { text: '', imagePath: '', isCorrect: false }, 
+      { text: '', imagePath: '', isCorrect: false }, { text: '', imagePath: '', isCorrect: false }
+    ]);
     setCqParts([{ label: 'k', qText: '', aText: '' }, { label: 'kh', qText: '', aText: '' }, { label: 'g', qText: '', aText: '' }, { label: 'gh', qText: '', aText: '' }]);
   };
 
@@ -144,16 +154,28 @@ export default function QuestionBank() {
 
     if (q.q_type === 'mcq') {
       if (q.mcq_options) {
-        const formattedOptions = q.mcq_options.map(o => ({ text: o.option_text, isCorrect: o.is_correct })).slice(0, 4);
-        while(formattedOptions.length < 4) formattedOptions.push({ text: '', isCorrect: false });
+        const formattedOptions = q.mcq_options.map(o => ({ 
+          text: o.option_text || '', 
+          imagePath: o.option_image_path || '',
+          isCorrect: o.is_correct 
+        })).slice(0, 4);
+        while(formattedOptions.length < 4) formattedOptions.push({ text: '', imagePath: '', isCorrect: false });
         setOptions(formattedOptions);
       }
       if (q.mcq_statements && q.mcq_statements.length > 0) {
         setIsPolyMCQ(true);
-        setMcqStatements([q.mcq_statements[0] || '', q.mcq_statements[1] || '', q.mcq_statements[2] || '']);
+        const parsedStatements = q.mcq_statements.map(s => {
+           if (typeof s === 'string') return { text: s, imagePath: '' };
+           return { text: s.text || '', imagePath: s.imagePath || '' };
+        });
+        setMcqStatements([
+          parsedStatements[0] || { text: '', imagePath: '' }, 
+          parsedStatements[1] || { text: '', imagePath: '' }, 
+          parsedStatements[2] || { text: '', imagePath: '' }
+        ]);
       } else {
         setIsPolyMCQ(false);
-        setMcqStatements(['', '', '']);
+        setMcqStatements([{ text: '', imagePath: '' }, { text: '', imagePath: '' }, { text: '', imagePath: '' }]);
       }
     }
 
@@ -188,7 +210,6 @@ export default function QuestionBank() {
     } catch (error) { toast.error("Failed to delete: " + error.message); }
   };
 
-  // Standalone Image Uploader Logic (For Excel URLs)
   const handleStandaloneImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -199,7 +220,6 @@ export default function QuestionBank() {
       const imageUrl = await questionService.uploadImageToCloudinary(file);
       setStandaloneImageUrl(imageUrl);
       
-      // Automatically copy to clipboard for convenience
       navigator.clipboard.writeText(imageUrl);
       toast.success("Image URL Copied to Clipboard!", { id: "std-img-upload" });
     } catch (error) {
@@ -210,20 +230,32 @@ export default function QuestionBank() {
     }
   };
 
-  const handleImageUpload = async (e) => {
+  // 🔥 UPDATED: Dynamic Image Uploader (Handles Main, Statements, Options)
+  const handleDynamicImageUpload = async (e, target) => {
     const file = e.target.files[0];
     if (!file) return;
 
     try {
-      setIsUploadingImage(true);
-      toast.loading("Uploading and optimizing image...", { id: "img-upload" });
+      setUploadingTarget(target);
+      toast.loading("Uploading image...", { id: "dyn-img-upload" });
+      
       const imageUrl = await questionService.uploadImageToCloudinary(file);
-      setNewQ(prev => ({ ...prev, imagePath: imageUrl }));
-      toast.success("Image added successfully!", { id: "img-upload" });
+      
+      if (target === 'main') {
+        setNewQ(prev => ({ ...prev, imagePath: imageUrl }));
+      } else if (target.startsWith('stmt-')) {
+        const idx = parseInt(target.split('-')[1]);
+        setMcqStatements(prev => prev.map((s, i) => i === idx ? { ...s, imagePath: imageUrl } : s));
+      } else if (target.startsWith('opt-')) {
+        const idx = parseInt(target.split('-')[1]);
+        setOptions(prev => prev.map((o, i) => i === idx ? { ...o, imagePath: imageUrl } : o));
+      }
+
+      toast.success("Image attached!", { id: "dyn-img-upload" });
     } catch (error) {
-      toast.error(error.message, { id: "img-upload" });
+      toast.error(error.message, { id: "dyn-img-upload" });
     } finally {
-      setIsUploadingImage(false);
+      setUploadingTarget(null);
       e.target.value = null; 
     }
   };
@@ -247,7 +279,7 @@ export default function QuestionBank() {
     if (!newQ.text.trim()) return toast.error("The main question text cannot be empty.");
 
     if (qType === 'mcq' && isPolyMCQ) {
-      const filledCount = mcqStatements.filter(s => s.trim() !== '').length;
+      const filledCount = mcqStatements.filter(s => s.text.trim() !== '' || s.imagePath.trim() !== '').length;
       if (filledCount !== 0 && filledCount !== 3) {
         return toast.error("For multiple completion, please fill all 3 statements.");
       }
@@ -303,11 +335,9 @@ export default function QuestionBank() {
   };
 
   return (
-    // 🚀 Made wrapper responsive: min-h-screen for mobile, fixed 100vh on lg
     <div className="flex flex-col h-auto min-h-[calc(100vh-100px)] lg:h-[calc(100vh-100px)] lg:min-h-0 text-slate-200 font-sans overflow-y-auto lg:overflow-hidden p-2 lg:p-0">
       <Toaster position="top-right" toastOptions={{ style: { background: '#0B0F19', color: '#f8fafc', border: '1px solid #1E293B' } }} />
       
-      {/* 🚀 HEADER & NAVIGATION */}
       <div className="bg-[#0B0F19] p-4 lg:px-6 rounded-2xl border border-[#1E293B] mb-4 flex flex-col items-center justify-between gap-4 shrink-0 shadow-lg w-full">
         
         <div className="flex flex-col md:flex-row items-center justify-between w-full gap-4">
@@ -318,7 +348,6 @@ export default function QuestionBank() {
             </div>
           </div>
 
-          {/* 🌟 NEW: Standalone Image Uploader for URL Generation */}
           <div className="flex items-center gap-2 bg-[#07090E] p-1.5 rounded-xl border border-[#1E293B] w-full md:w-auto overflow-hidden">
             <label className={`cursor-pointer px-3 py-2 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap ${isUploadingStandalone ? 'text-slate-600 cursor-not-allowed' : 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20'}`}>
               {isUploadingStandalone ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
@@ -373,11 +402,8 @@ export default function QuestionBank() {
           <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-500 text-center px-4">Select Subject & Chapter to view repository</p>
         </div>
       ) : (
-        // 🚀 Responsive Grid: flex-col on mobile, grid on lg
         <div className="flex-1 flex flex-col lg:grid lg:grid-cols-12 gap-5 min-h-0 pb-2">
           
-          {/* 🚀 LIVE REPOSITORY LIST */}
-          {/* Mobile height 60vh, lg: full height */}
           <div className="lg:col-span-7 flex flex-col h-[60vh] lg:h-full bg-[#0B0F19] rounded-3xl border border-[#1E293B] overflow-hidden shadow-lg shrink-0 lg:shrink">
              <div className="p-3 sm:p-4 bg-[#07090E] border-b border-[#1E293B] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shrink-0">
               <span className="text-[11px] font-black text-slate-300 uppercase tracking-widest flex items-center gap-2">
@@ -399,8 +425,7 @@ export default function QuestionBank() {
               ) : (
                 questions.map((q, idx) => (
                   <div key={q.id} className={`p-4 sm:p-5 rounded-2xl border transition-all duration-200 group relative ${editingId === q.id ? 'bg-[#2563EB]/10 border-[#2563EB]/50 shadow-[0_0_15px_rgba(37,99,235,0.1)]' : 'bg-[#07090E]/60 border-[#1E293B] hover:border-slate-600'}`}>
-                    {/* Make action buttons always visible on touch devices (mobile), hover on PC */}
-                    <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1.5 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1.5 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
                       <button onClick={() => handleEditClick(q)} className="p-2 text-[#2563EB] bg-[#2563EB]/10 rounded-lg hover:bg-[#2563EB] hover:text-white transition-colors" title="Edit"><Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
                       <button onClick={() => handleDeleteQuestion(q.id)} className="p-2 text-rose-500 bg-rose-500/10 rounded-lg hover:bg-rose-500 hover:text-white transition-colors" title="Delete"><Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
                     </div>
@@ -425,10 +450,21 @@ export default function QuestionBank() {
                     {q.question_image_path && <img src={q.question_image_path} alt="Question Graphic" className="max-w-full max-h-40 object-contain mb-4 rounded-lg border border-[#1E293B]" />}
                     
                     {q.q_type === 'mcq' && q.mcq_statements && q.mcq_statements.length > 0 && (
-                      <div className="mt-2 mb-4 pl-3 sm:pl-4 py-2 border-l-2 border-[#1E293B] text-xs text-slate-300 space-y-2">
-                        <div className="flex gap-2"><span className="font-bold text-[#2563EB] w-4">i.</span> {q.mcq_statements[0]}</div>
-                        <div className="flex gap-2"><span className="font-bold text-[#2563EB] w-4">ii.</span> {q.mcq_statements[1]}</div>
-                        <div className="flex gap-2"><span className="font-bold text-[#2563EB] w-4">iii.</span> {q.mcq_statements[2]}</div>
+                      <div className="mt-2 mb-4 pl-3 sm:pl-4 py-2 border-l-2 border-[#1E293B] text-xs text-slate-300 space-y-3">
+                        {q.mcq_statements.map((stmt, i) => {
+                          const text = typeof stmt === 'string' ? stmt : stmt?.text;
+                          const img = typeof stmt === 'object' ? stmt?.imagePath : null;
+                          if (!text && !img) return null;
+                          return (
+                            <div key={i} className="flex gap-2">
+                              <span className="font-bold text-[#2563EB] w-4 shrink-0">{['i.', 'ii.', 'iii.'][i]}</span> 
+                              <div className="flex flex-col gap-2">
+                                {text && <span>{text}</span>}
+                                {img && <img src={img} alt="Statement graphic" className="max-h-24 rounded-md border border-[#1E293B] object-contain" />}
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
 
@@ -438,7 +474,10 @@ export default function QuestionBank() {
                           {q.mcq_options?.map((opt, i) => (
                             <div key={opt.id} className={`px-3 sm:px-4 py-2.5 text-xs rounded-xl border flex items-start gap-3 ${opt.is_correct ? 'bg-[#2563EB]/10 border-[#2563EB]/40 text-blue-200 font-bold' : 'bg-[#0B0F19] border-[#1E293B] text-slate-400'}`}>
                               <span className={`flex items-center justify-center w-5 h-5 rounded-md text-[10px] font-black shrink-0 ${opt.is_correct ? 'bg-[#2563EB] text-white shadow-md shadow-[#2563EB]/20' : 'bg-slate-800 text-slate-300'}`}>{String.fromCharCode(65 + i)}</span>
-                              <span className="leading-snug mt-0.5 break-words overflow-hidden">{opt.option_text}</span>
+                              <div className="flex flex-col gap-2 w-full mt-0.5">
+                                {opt.option_text && <span className="leading-snug break-words">{opt.option_text}</span>}
+                                {opt.option_image_path && <img src={opt.option_image_path} alt="Option graphic" className="max-h-20 rounded-md border border-[#1E293B] object-contain self-start" />}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -472,8 +511,6 @@ export default function QuestionBank() {
             </div>
           </div>
 
-          {/* 🚀 ADD / EDIT DATA ENTRY FORM */}
-          {/* Mobile height 75vh, lg: full height */}
           <div className="lg:col-span-5 flex flex-col h-[75vh] lg:h-full overflow-hidden bg-[#0B0F19] rounded-3xl border border-[#1E293B] shadow-lg shrink-0 lg:shrink">
             <div className="flex bg-[#07090E] p-1.5 sm:p-2 border-b border-[#1E293B] shrink-0 rounded-t-3xl overflow-x-auto custom-scrollbar">
               {[{ id: 'mcq', label: 'MCQ' }, { id: 'sq1', label: 'Short Q' }, { id: 'sq2', label: 'Written Q' }, { id: 'cq', label: 'Creative' }].map(tab => (
@@ -490,13 +527,13 @@ export default function QuestionBank() {
                 {['mcq', 'cq'].includes(qType) && (
                   <div className="flex items-center gap-2 sm:gap-3 bg-[#07090E] px-3 py-2 sm:px-4 sm:py-2.5 rounded-2xl border border-[#1E293B] focus-within:border-[#2563EB] shadow-inner">
                     <ImageIcon className="w-4 h-4 text-slate-500 shrink-0" />
-                    <input type="text" className="flex-1 min-w-0 bg-transparent border-none focus:ring-0 text-xs font-medium outline-none text-slate-200 placeholder-slate-600" placeholder="Paste image URL here..." value={newQ.imagePath || ''} onChange={(e) => setNewQ({...newQ, imagePath: e.target.value})} disabled={isUploadingImage} />
+                    <input type="text" className="flex-1 min-w-0 bg-transparent border-none focus:ring-0 text-xs font-medium outline-none text-slate-200 placeholder-slate-600" placeholder="Paste image URL here..." value={newQ.imagePath || ''} onChange={(e) => setNewQ({...newQ, imagePath: e.target.value})} disabled={uploadingTarget === 'main'} />
                     <div className="w-px h-5 bg-[#1E293B] hidden sm:block"></div>
-                    <label className={`cursor-pointer px-2 sm:px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-1 sm:gap-2 shrink-0 ${isUploadingImage ? 'text-slate-600 cursor-not-allowed' : 'text-[#2563EB] bg-[#2563EB]/10 hover:bg-[#2563EB]/20'}`}>
-                      {isUploadingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
-                      <span className="hidden sm:inline">{isUploadingImage ? 'Uploading' : 'Upload File'}</span>
-                      <span className="sm:hidden">{isUploadingImage ? '...' : 'Upload'}</span>
-                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isUploadingImage} />
+                    <label className={`cursor-pointer px-2 sm:px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-1 sm:gap-2 shrink-0 ${uploadingTarget === 'main' ? 'text-slate-600 cursor-not-allowed' : 'text-[#2563EB] bg-[#2563EB]/10 hover:bg-[#2563EB]/20'}`}>
+                      {uploadingTarget === 'main' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
+                      <span className="hidden sm:inline">{uploadingTarget === 'main' ? 'Uploading' : 'Upload File'}</span>
+                      <span className="sm:hidden">{uploadingTarget === 'main' ? '...' : 'Upload'}</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleDynamicImageUpload(e, 'main')} disabled={uploadingTarget === 'main'} />
                     </label>
                   </div>
                 )}
@@ -513,11 +550,22 @@ export default function QuestionBank() {
                   </label>
                   
                   {isPolyMCQ && (
-                    <div className="space-y-3 mt-1">
+                    <div className="space-y-4 mt-1">
                       {mcqStatements.map((stmt, idx) => (
-                        <div key={idx} className="flex gap-2 sm:gap-3 items-center">
-                          <span className="text-xs font-black text-slate-500 w-6 uppercase shrink-0">{['i.', 'ii.', 'iii.'][idx]}</span>
-                          <input type="text" className="flex-1 p-2.5 sm:p-3 text-xs bg-[#0B0F19] border border-[#1E293B] rounded-xl focus:border-[#2563EB] outline-none text-slate-200 font-medium shadow-inner min-w-0" placeholder={`Statement ${idx + 1}`} value={stmt} onChange={(e) => setMcqStatements(mcqStatements.map((s, i) => i === idx ? e.target.value : s))} required={isPolyMCQ} />
+                        <div key={idx} className="flex gap-2 sm:gap-3 items-start">
+                          <span className="text-xs font-black text-slate-500 w-6 uppercase shrink-0 pt-2">{['i.', 'ii.', 'iii.'][idx]}</span>
+                          <div className="flex flex-col gap-2 flex-1">
+                            <input type="text" className="w-full p-2.5 sm:p-3 text-xs bg-[#0B0F19] border border-[#1E293B] rounded-xl focus:border-[#2563EB] outline-none text-slate-200 font-medium shadow-inner" placeholder={`Statement ${idx + 1} Text`} value={stmt.text} onChange={(e) => setMcqStatements(mcqStatements.map((s, i) => i === idx ? {...s, text: e.target.value} : s))} />
+                            
+                            {/* 🔥 UPDATE: Direct Upload for Statement Images */}
+                            <div className="flex items-center gap-2 bg-[#07090E] px-2 py-1.5 rounded-lg border border-[#1E293B]/50 focus-within:border-emerald-500/50">
+                              <input type="text" className="flex-1 bg-transparent border-none text-[11px] outline-none text-slate-400 font-medium placeholder:text-slate-600" placeholder="Image URL (Optional)" value={stmt.imagePath} onChange={(e) => setMcqStatements(mcqStatements.map((s, i) => i === idx ? {...s, imagePath: e.target.value} : s))} disabled={uploadingTarget === `stmt-${idx}`} />
+                              <label className={`cursor-pointer shrink-0 p-1.5 rounded-md transition-colors ${uploadingTarget === `stmt-${idx}` ? 'text-slate-600' : 'text-emerald-500 hover:bg-emerald-500/10'}`} title="Upload Image">
+                                {uploadingTarget === `stmt-${idx}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
+                                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleDynamicImageUpload(e, `stmt-${idx}`)} disabled={uploadingTarget === `stmt-${idx}`} />
+                              </label>
+                            </div>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -527,12 +575,24 @@ export default function QuestionBank() {
 
               <div className="flex flex-col gap-4 border-t border-[#1E293B] pt-5">
                 {qType === 'mcq' && (
-                  <div className="space-y-3 sm:space-y-4">
+                  <div className="space-y-4 sm:space-y-5">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Options (Select the correct one)</label>
                     {options.map((opt, idx) => (
-                      <div key={idx} className="flex items-center gap-2 sm:gap-3">
-                        <div onClick={() => setOptions(options.map((o, i) => ({...o, isCorrect: i===idx})))} className={`w-8 h-8 shrink-0 rounded-lg flex items-center justify-center cursor-pointer font-black text-xs transition-all ${opt.isCorrect ? 'bg-[#2563EB] text-white shadow-lg shadow-[#2563EB]/30' : 'bg-[#07090E] border border-[#1E293B] text-slate-500 hover:text-slate-300'}`}>{String.fromCharCode(65+idx)}</div>
-                        <input type="text" required className={`flex-1 min-w-0 p-2.5 sm:p-3 text-xs font-medium rounded-xl outline-none transition-colors border shadow-inner ${opt.isCorrect ? 'bg-[#2563EB]/5 border-[#2563EB]/50 text-blue-200' : 'bg-[#07090E] border-[#1E293B] text-slate-300 focus:border-slate-500'}`} placeholder={`Option ${String.fromCharCode(65+idx)} text...`} value={opt.text} onChange={(e) => setOptions(options.map((o, i) => i === idx ? {...o, text: e.target.value} : o))} />
+                      <div key={idx} className="flex items-start gap-2 sm:gap-3">
+                        <div onClick={() => setOptions(options.map((o, i) => ({...o, isCorrect: i===idx})))} className={`w-8 h-8 mt-1 shrink-0 rounded-lg flex items-center justify-center cursor-pointer font-black text-xs transition-all ${opt.isCorrect ? 'bg-[#2563EB] text-white shadow-lg shadow-[#2563EB]/30' : 'bg-[#07090E] border border-[#1E293B] text-slate-500 hover:text-slate-300'}`}>{String.fromCharCode(65+idx)}</div>
+                        
+                        <div className="flex flex-col gap-2 flex-1 min-w-0">
+                          <input type="text" className={`w-full p-2.5 sm:p-3 text-xs font-medium rounded-xl outline-none transition-colors border shadow-inner ${opt.isCorrect ? 'bg-[#2563EB]/5 border-[#2563EB]/50 text-blue-200' : 'bg-[#07090E] border-[#1E293B] text-slate-300 focus:border-slate-500'}`} placeholder={`Option ${String.fromCharCode(65+idx)} Text`} value={opt.text} onChange={(e) => setOptions(options.map((o, i) => i === idx ? {...o, text: e.target.value} : o))} />
+                          
+                          {/* 🔥 UPDATE: Direct Upload for Option Images */}
+                          <div className="flex items-center gap-2 bg-[#07090E] px-2 py-1.5 rounded-lg border border-[#1E293B]/50 focus-within:border-emerald-500/50">
+                            <input type="text" className="flex-1 bg-transparent border-none text-[11px] outline-none text-slate-400 font-medium placeholder:text-slate-600" placeholder="Image URL (Optional)" value={opt.imagePath} onChange={(e) => setOptions(options.map((o, i) => i === idx ? {...o, imagePath: e.target.value} : o))} disabled={uploadingTarget === `opt-${idx}`} />
+                            <label className={`cursor-pointer shrink-0 p-1.5 rounded-md transition-colors ${uploadingTarget === `opt-${idx}` ? 'text-slate-600' : 'text-emerald-500 hover:bg-emerald-500/10'}`} title="Upload Image">
+                              {uploadingTarget === `opt-${idx}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
+                              <input type="file" accept="image/*" className="hidden" onChange={(e) => handleDynamicImageUpload(e, `opt-${idx}`)} disabled={uploadingTarget === `opt-${idx}`} />
+                            </label>
+                          </div>
+                        </div>
                       </div>
                     ))}
                     <div className="pt-3">
@@ -604,7 +664,6 @@ export default function QuestionBank() {
                 </div>
               )}
 
-              {/* Responsive flex direction for the toggles */}
               <div className="border-t border-[#1E293B] pt-5 flex flex-col sm:flex-row gap-3">
                 <label className="flex-1 flex sm:flex-col flex-row justify-between sm:justify-center items-center gap-2 cursor-pointer p-3 rounded-2xl bg-[#07090E] border border-[#1E293B] hover:border-[#2563EB]/50 transition-colors select-none shadow-inner">
                   <span className={`text-[10px] font-black uppercase tracking-widest order-2 sm:order-none ${newQ.isExamMaterial ? 'text-blue-300' : 'text-slate-500'}`}>Practice Flow</span>
@@ -630,14 +689,13 @@ export default function QuestionBank() {
                 </div>
               </div>
 
-              {/* Responsive flex direction for the save buttons */}
               <div className="mt-2 sm:mt-3 flex flex-col sm:flex-row gap-3 pt-2">
                 {editingId && (
                   <button type="button" onClick={resetForm} className="w-full sm:w-auto px-6 py-3.5 bg-[#07090E] text-slate-400 hover:bg-[#1E293B] hover:text-white rounded-xl font-black text-[11px] uppercase tracking-widest transition-colors border border-[#1E293B]">Cancel Edit</button>
                 )}
-                <button type="submit" disabled={isSavingQuestion || isUploadingImage || isUploadingStandalone} className="flex-1 py-3.5 bg-[#2563EB] text-white rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-blue-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#2563EB]/20">
-                  {(isSavingQuestion || isUploadingImage) ? <Loader2 className="w-4 h-4 animate-spin"/> : editingId ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                  {isSavingQuestion ? 'Saving Data...' : isUploadingImage ? 'Uploading Image...' : editingId ? 'Update Question' : 'Save Question'}
+                <button type="submit" disabled={isSavingQuestion || uploadingTarget || isUploadingStandalone} className="flex-1 py-3.5 bg-[#2563EB] text-white rounded-xl font-black text-[11px] uppercase tracking-widest hover:bg-blue-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#2563EB]/20">
+                  {(isSavingQuestion || uploadingTarget) ? <Loader2 className="w-4 h-4 animate-spin"/> : editingId ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                  {isSavingQuestion ? 'Saving Data...' : uploadingTarget ? 'Uploading Image...' : editingId ? 'Update Question' : 'Save Question'}
                 </button>
               </div>
             </form>

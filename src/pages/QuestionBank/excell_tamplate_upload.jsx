@@ -20,7 +20,32 @@ export default function ExcelTemplateUpload({
     let fileName = "";
     
     if (type === 'mcq') {
-      templateData = [{ Type: "mcq", Question_Stem: "নিচের কোনটি ভেক্টর রাশি?", Statement_i: "", Statement_ii: "", Statement_iii: "", Image_URL: "", Importance_1_to_5: 5, Is_Exam_Material: "TRUE", Is_Content_Material: "TRUE", Option_A: "কাজ", Option_B: "তাপমাত্রা", Option_C: "বেগ", Option_D: "দ্রুতি", Correct_Option_ABCD: "C", Explanation: "বেগের মান ও দিক উভয়ই আছে।", Board_Tags: "Dhaka-2023, Comilla-2022" }];
+      // 🚀 UPDATED: Added Image columns for Statements and Options
+      templateData = [{ 
+        Type: "mcq", 
+        Question_Stem: "নিচের কোনটি ভেক্টর রাশি?", 
+        Image_URL: "", 
+        Statement_i: "", 
+        Statement_i_Image: "",
+        Statement_ii: "", 
+        Statement_ii_Image: "",
+        Statement_iii: "", 
+        Statement_iii_Image: "",
+        Importance_1_to_5: 5, 
+        Is_Exam_Material: "TRUE", 
+        Is_Content_Material: "TRUE", 
+        Option_A: "কাজ", 
+        Option_A_Image: "",
+        Option_B: "তাপমাত্রা", 
+        Option_B_Image: "",
+        Option_C: "বেগ", 
+        Option_C_Image: "",
+        Option_D: "দ্রুতি", 
+        Option_D_Image: "",
+        Correct_Option_ABCD: "C", 
+        Explanation: "বেগের মান ও দিক উভয়ই আছে।", 
+        Board_Tags: "Dhaka-2023, Comilla-2022" 
+      }];
       fileName = "Qaave_MCQ_Template.xlsx";
     } else if (type === 'sq1') {
       templateData = [{ Type: "sq", Question_Stem: "বলবিদ্যা কাকে বলে?", Image_URL: "", Importance_1_to_5: 3, Is_Exam_Material: "FALSE", Is_Content_Material: "TRUE", Exact_Solution: "পদার্থবিজ্ঞানের যে শাখায় বল ও বস্তুর গতির সম্পর্ক নিয়ে আলোচনা করা হয়...", Board_Tags: "Rajshahi-2021" }];
@@ -52,13 +77,13 @@ export default function ExcelTemplateUpload({
     XLSX.writeFile(workbook, "Qaave_Upload_Error_Log.xlsx");
   };
 
-  // 🚀 FIXED: Removed .sort() to preserve exact option positions
+  // 🚀 FIXED: Added imagePath check in signature to prevent wrong duplicates
   const getSignature = (type, text, optionsArr = []) => {
     const normalizedText = String(text || '').trim().toLowerCase();
     if (type === 'mcq') {
-      const optStr = optionsArr.map(o => String(o.text || '').trim().toLowerCase()).join('|');
+      const optStr = optionsArr.map(o => `${String(o.text || '').trim().toLowerCase()}~${String(o.imagePath || '').trim()}`).join('|');
       const correctOpt = optionsArr.find(o => o.isCorrect);
-      const correctStr = correctOpt ? String(correctOpt.text || '').trim().toLowerCase() : '';
+      const correctStr = correctOpt ? `${String(correctOpt.text || '').trim().toLowerCase()}~${String(correctOpt.imagePath || '').trim()}` : '';
       return `mcq|${normalizedText}|${optStr}|correct:${correctStr}`;
     }
     return `${type}|${normalizedText}`;
@@ -94,7 +119,12 @@ export default function ExcelTemplateUpload({
         existingQuestions.forEach(q => {
           let optsForSig = [];
           if (q.q_type === 'mcq' && q.mcq_options) {
-            optsForSig = q.mcq_options.map(o => ({ text: o.option_text, isCorrect: o.is_correct }));
+            // 🚀 Fetching option_image_path for signature match
+            optsForSig = q.mcq_options.map(o => ({ 
+              text: o.option_text, 
+              imagePath: o.option_image_path, 
+              isCorrect: o.is_correct 
+            }));
           }
           const sig = getSignature(q.q_type, q.question_text, optsForSig);
           existingMap.set(sig, q);
@@ -123,18 +153,25 @@ export default function ExcelTemplateUpload({
                 const correctOpt = String(row.Correct_Option_ABCD || '').trim().toUpperCase();
                 if (!['A', 'B', 'C', 'D'].includes(correctOpt)) throw new Error(`Invalid Correct_Option: "${correctOpt}".`);
                 
+                // 🚀 UPDATED: Mapping Excel columns to text and imagePath
                 optionsArray = [
-                  { text: String(row.Option_A || '').trim(), isCorrect: correctOpt === 'A' },
-                  { text: String(row.Option_B || '').trim(), isCorrect: correctOpt === 'B' },
-                  { text: String(row.Option_C || '').trim(), isCorrect: correctOpt === 'C' },
-                  { text: String(row.Option_D || '').trim(), isCorrect: correctOpt === 'D' }
+                  { text: String(row.Option_A || '').trim(), imagePath: String(row.Option_A_Image || '').trim() || null, isCorrect: correctOpt === 'A' },
+                  { text: String(row.Option_B || '').trim(), imagePath: String(row.Option_B_Image || '').trim() || null, isCorrect: correctOpt === 'B' },
+                  { text: String(row.Option_C || '').trim(), imagePath: String(row.Option_C_Image || '').trim() || null, isCorrect: correctOpt === 'C' },
+                  { text: String(row.Option_D || '').trim(), imagePath: String(row.Option_D_Image || '').trim() || null, isCorrect: correctOpt === 'D' }
                 ];
                 
-                if (optionsArray.some(o => !o.text)) throw new Error("One or more MCQ options are empty.");
+                // Ensure at least text or image is present
+                if (optionsArray.some(o => !o.text && !o.imagePath)) throw new Error("One or more MCQ options are entirely empty (No text and No image).");
 
-                if (row.Statement_i || row.Statement_ii || row.Statement_iii) {
-                   rowMcqStatements = [String(row.Statement_i || ''), String(row.Statement_ii || ''), String(row.Statement_iii || '')];
-                   if (rowMcqStatements.some(s => !s.trim())) throw new Error("Multiple completion requires all 3 statements.");
+                // 🚀 UPDATED: Checking both text and image columns for statements
+                if (row.Statement_i || row.Statement_ii || row.Statement_iii || row.Statement_i_Image || row.Statement_ii_Image || row.Statement_iii_Image) {
+                   rowMcqStatements = [
+                     { text: String(row.Statement_i || '').trim(), imagePath: String(row.Statement_i_Image || '').trim() },
+                     { text: String(row.Statement_ii || '').trim(), imagePath: String(row.Statement_ii_Image || '').trim() },
+                     { text: String(row.Statement_iii || '').trim(), imagePath: String(row.Statement_iii_Image || '').trim() }
+                   ];
+                   if (rowMcqStatements.some(s => !s.text && !s.imagePath)) throw new Error("Multiple completion requires all 3 statements to have text or an image.");
                 }
               }
 
@@ -216,7 +253,6 @@ export default function ExcelTemplateUpload({
                 if (!hasNewBoard) {
                   throw new Error("SKIPPED: Exact question with identical options & boards already exists.");
                 } else {
-                  // 🚀 FIXED: Send ONLY the new boards to be UPSERTED, avoiding DELETE+INSERT logic
                   await questionService.mergeBoardTags(existingQ.id, boardsToInsert);
                   
                   const updatedBoardHistory = Array.from(mergedBoardsMap.values());

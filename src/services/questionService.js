@@ -75,7 +75,6 @@ export const questionService = {
       optionsArray, cqParts, boardTags, mcqStatements 
     } = payload;
     
-    // 🛠️ FIX: Strict validation BEFORE hitting the database
     validateQuestionPayload(payload);
 
     // ১. Main Question Insert
@@ -98,11 +97,14 @@ export const questionService = {
     if (qError) throw qError;
     const questionId = qData[0].id;
 
-    // ৪. Pseudo-Transaction Handling
     try {
       if (qType === 'mcq' && optionsArray?.length > 0) {
         const opts = optionsArray.map((opt, i) => ({
-          question_id: questionId, option_order: i + 1, option_text: opt.text, is_correct: opt.isCorrect
+          question_id: questionId, 
+          option_order: i + 1, 
+          option_text: opt.text, 
+          option_image_path: opt.imagePath || null, // 🔥 Image path support for options
+          is_correct: opt.isCorrect
         }));
         const { error: optError } = await supabase.from('mcq_options').insert(opts);
         if (optError) throw optError;
@@ -134,7 +136,6 @@ export const questionService = {
       return qData[0];
 
     } catch (insertionError) {
-      // 🛑 ROLLBACK: Delete main question if children fail
       await supabase.from('questions').delete().eq('id', questionId);
       throw new Error(`Failed to save sub-items. Rolled back question. Reason: ${insertionError.message}`);
     }
@@ -147,7 +148,6 @@ export const questionService = {
       isExamMaterial, isContentMaterial, optionsArray, cqParts, boardTags, mcqStatements 
     } = payload;
     
-    // 🛠️ FIX: Strict validation BEFORE deleting old relationships
     validateQuestionPayload(payload);
 
     const { error: qError } = await supabase.from('questions').update({
@@ -166,7 +166,6 @@ export const questionService = {
     if (qError) throw qError;
 
     try {
-      // Clear old relationships
       const { error: delOptErr } = await supabase.from('mcq_options').delete().eq('question_id', questionId);
       if (delOptErr) throw delOptErr;
 
@@ -176,10 +175,13 @@ export const questionService = {
       const { error: delBoardErr } = await supabase.from('question_board_history').delete().eq('question_id', questionId);
       if (delBoardErr) throw delBoardErr;
 
-      // Insert new relationships
       if (qType === 'mcq' && optionsArray?.length > 0) {
         const opts = optionsArray.map((opt, i) => ({ 
-          question_id: questionId, option_order: i + 1, option_text: opt.text, is_correct: opt.isCorrect 
+          question_id: questionId, 
+          option_order: i + 1, 
+          option_text: opt.text, 
+          option_image_path: opt.imagePath || null, // 🔥 Image path support for options
+          is_correct: opt.isCorrect 
         }));
         const { error: insOptErr } = await supabase.from('mcq_options').insert(opts);
         if (insOptErr) throw insOptErr;
@@ -215,7 +217,6 @@ export const questionService = {
 
   // 🚀 ৫. Delete Question
   deleteQuestion: async (questionId) => {
-    // 🛠️ FIX: Manually delete child records first to prevent orphans if ON DELETE CASCADE is missing
     await Promise.all([
       supabase.from('mcq_options').delete().eq('question_id', questionId),
       supabase.from('cq_parts').delete().eq('question_id', questionId),
@@ -227,10 +228,9 @@ export const questionService = {
     return true;
   },
 
-  // 🚀 ৬. Upload Image to Cloudinary (Auto Optimize to WebP)
+  // 🚀 ৬. Upload Image to Cloudinary
   uploadImageToCloudinary: async (file) => {
     try {
-      // 🛠️ FIX: Strict size validation (Max 5MB)
       const MAX_SIZE_MB = 5;
       if (file.size > MAX_SIZE_MB * 1024 * 1024) {
         throw new Error(`File is too large. Maximum allowed size is ${MAX_SIZE_MB}MB.`);
@@ -258,10 +258,8 @@ export const questionService = {
         throw new Error(data.error?.message || "Cloudinary upload failed.");
       }
 
-      // 🛠️ FIX: Robust Cloudinary URL parameter injection
       const urlParts = data.secure_url.split('/upload/');
       if (urlParts.length > 1) {
-        // Safe join in case there are multiple '/upload/' in the URL
         return `${urlParts[0]}/upload/f_auto,q_auto/${urlParts.slice(1).join('/upload/')}`;
       }
       
@@ -271,5 +269,22 @@ export const questionService = {
       console.error("Image Upload Error:", error);
       throw new Error(`Upload failed: ${error.message}`);
     }
+  },
+
+  // 🚀 ৭. Merge Board Tags (Required for Excel Bulk Upload)
+  mergeBoardTags: async (questionId, newBoards) => {
+    if (!newBoards || newBoards.length === 0) return true;
+    
+    const validBoards = newBoards.map(b => ({
+      question_id: questionId,
+      board_id: b.boardId || b.board_id || b.boards?.id,
+      year: parseInt(b.year)
+    })).filter(b => b.board_id && !isNaN(b.year));
+
+    if (validBoards.length > 0) {
+      const { error } = await supabase.from('question_board_history').insert(validBoards);
+      if (error) throw error;
+    }
+    return true;
   }
 };

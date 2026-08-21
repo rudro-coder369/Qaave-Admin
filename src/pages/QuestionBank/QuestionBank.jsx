@@ -22,12 +22,12 @@ export default function QuestionBank() {
   const [isSavingQuestion, setIsSavingQuestion] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   
-  // 🔥 NEW: Track which specific input is currently uploading (e.g., 'stmt-0', 'opt-1', 'main')
+  // Track which specific input is currently uploading
   const [uploadingTarget, setUploadingTarget] = useState(null); 
   
   const [editingId, setEditingId] = useState(null); 
 
-  // Standalone Uploader State (For Excel / Quick URL)
+  // Standalone Uploader State
   const [standaloneImageUrl, setStandaloneImageUrl] = useState('');
   const [isUploadingStandalone, setIsUploadingStandalone] = useState(false);
 
@@ -230,7 +230,6 @@ export default function QuestionBank() {
     }
   };
 
-  // 🔥 UPDATED: Dynamic Image Uploader (Handles Main, Statements, Options)
   const handleDynamicImageUpload = async (e, target) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -334,6 +333,10 @@ export default function QuestionBank() {
     });
   };
 
+  // 🔥 FILTER LOGIC ADDED HERE:
+  const activeQType = qType === 'sq1' ? 'sq' : qType === 'sq2' ? 'written' : qType;
+  const filteredQuestions = questions.filter(q => q.q_type === activeQType);
+
   return (
     <div className="flex flex-col h-auto min-h-[calc(100vh-100px)] lg:h-[calc(100vh-100px)] lg:min-h-0 text-slate-200 font-sans overflow-y-auto lg:overflow-hidden p-2 lg:p-0">
       <Toaster position="top-right" toastOptions={{ style: { background: '#0B0F19', color: '#f8fafc', border: '1px solid #1E293B' } }} />
@@ -410,20 +413,20 @@ export default function QuestionBank() {
                 <BookOpen className="w-4 h-4 text-[#2563EB]" /> Database List
               </span>
               <div className="flex gap-2 flex-wrap">
-                <span className="text-[9px] font-black text-rose-400 bg-rose-500/10 px-2 py-1 rounded-md border border-rose-500/20">Practice: {questions.filter(q => q.is_exam_material).length}</span>
-                <span className="text-[9px] font-black text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20">Content: {questions.filter(q => q.is_content_material).length}</span>
-                <span className="text-[9px] font-black text-amber-400 bg-amber-500/10 px-2 py-1 rounded-md border border-amber-500/20">Exam (3+⭐): {questions.filter(q => q.importance >= 3).length}</span>
-                <span className="text-[9px] font-black text-[#2563EB] bg-[#2563EB]/10 px-2 py-1 rounded-md border border-[#2563EB]/20">Total: {questions.length}</span>
+                <span className="text-[9px] font-black text-rose-400 bg-rose-500/10 px-2 py-1 rounded-md border border-rose-500/20">Practice: {filteredQuestions.filter(q => q.is_exam_material).length}</span>
+                <span className="text-[9px] font-black text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20">Content: {filteredQuestions.filter(q => q.is_content_material).length}</span>
+                <span className="text-[9px] font-black text-amber-400 bg-amber-500/10 px-2 py-1 rounded-md border border-amber-500/20">Exam (3+⭐): {filteredQuestions.filter(q => q.importance >= 3).length}</span>
+                <span className="text-[9px] font-black text-[#2563EB] bg-[#2563EB]/10 px-2 py-1 rounded-md border border-[#2563EB]/20">Total: {filteredQuestions.length}</span>
               </div>
             </div>
             
             <div className="flex-1 p-3 sm:p-4 overflow-y-auto space-y-4 custom-scrollbar">
               {isFetchingQuestions ? (
                 <div className="flex flex-col items-center justify-center h-full text-slate-500"><Loader2 className="w-8 h-8 animate-spin text-[#2563EB] mb-3" /><span className="text-xs font-bold uppercase tracking-widest">Loading data...</span></div>
-              ) : questions.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-slate-500 opacity-50"><FolderOpenIcon className="w-12 h-12 mb-3" /><span className="text-[10px] font-black uppercase tracking-widest">No questions found</span></div>
+              ) : filteredQuestions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-slate-500 opacity-50"><FolderOpenIcon className="w-12 h-12 mb-3" /><span className="text-[10px] font-black uppercase tracking-widest">No questions found for this type</span></div>
               ) : (
-                questions.map((q, idx) => (
+                filteredQuestions.map((q, idx) => (
                   <div key={q.id} className={`p-4 sm:p-5 rounded-2xl border transition-all duration-200 group relative ${editingId === q.id ? 'bg-[#2563EB]/10 border-[#2563EB]/50 shadow-[0_0_15px_rgba(37,99,235,0.1)]' : 'bg-[#07090E]/60 border-[#1E293B] hover:border-slate-600'}`}>
                     <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1.5 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
                       <button onClick={() => handleEditClick(q)} className="p-2 text-[#2563EB] bg-[#2563EB]/10 rounded-lg hover:bg-[#2563EB] hover:text-white transition-colors" title="Edit"><Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
@@ -557,7 +560,6 @@ export default function QuestionBank() {
                           <div className="flex flex-col gap-2 flex-1">
                             <input type="text" className="w-full p-2.5 sm:p-3 text-xs bg-[#0B0F19] border border-[#1E293B] rounded-xl focus:border-[#2563EB] outline-none text-slate-200 font-medium shadow-inner" placeholder={`Statement ${idx + 1} Text`} value={stmt.text} onChange={(e) => setMcqStatements(mcqStatements.map((s, i) => i === idx ? {...s, text: e.target.value} : s))} />
                             
-                            {/* 🔥 UPDATE: Direct Upload for Statement Images */}
                             <div className="flex items-center gap-2 bg-[#07090E] px-2 py-1.5 rounded-lg border border-[#1E293B]/50 focus-within:border-emerald-500/50">
                               <input type="text" className="flex-1 bg-transparent border-none text-[11px] outline-none text-slate-400 font-medium placeholder:text-slate-600" placeholder="Image URL (Optional)" value={stmt.imagePath} onChange={(e) => setMcqStatements(mcqStatements.map((s, i) => i === idx ? {...s, imagePath: e.target.value} : s))} disabled={uploadingTarget === `stmt-${idx}`} />
                               <label className={`cursor-pointer shrink-0 p-1.5 rounded-md transition-colors ${uploadingTarget === `stmt-${idx}` ? 'text-slate-600' : 'text-emerald-500 hover:bg-emerald-500/10'}`} title="Upload Image">
@@ -584,7 +586,6 @@ export default function QuestionBank() {
                         <div className="flex flex-col gap-2 flex-1 min-w-0">
                           <input type="text" className={`w-full p-2.5 sm:p-3 text-xs font-medium rounded-xl outline-none transition-colors border shadow-inner ${opt.isCorrect ? 'bg-[#2563EB]/5 border-[#2563EB]/50 text-blue-200' : 'bg-[#07090E] border-[#1E293B] text-slate-300 focus:border-slate-500'}`} placeholder={`Option ${String.fromCharCode(65+idx)} Text`} value={opt.text} onChange={(e) => setOptions(options.map((o, i) => i === idx ? {...o, text: e.target.value} : o))} />
                           
-                          {/* 🔥 UPDATE: Direct Upload for Option Images */}
                           <div className="flex items-center gap-2 bg-[#07090E] px-2 py-1.5 rounded-lg border border-[#1E293B]/50 focus-within:border-emerald-500/50">
                             <input type="text" className="flex-1 bg-transparent border-none text-[11px] outline-none text-slate-400 font-medium placeholder:text-slate-600" placeholder="Image URL (Optional)" value={opt.imagePath} onChange={(e) => setOptions(options.map((o, i) => i === idx ? {...o, imagePath: e.target.value} : o))} disabled={uploadingTarget === `opt-${idx}`} />
                             <label className={`cursor-pointer shrink-0 p-1.5 rounded-md transition-colors ${uploadingTarget === `opt-${idx}` ? 'text-slate-600' : 'text-emerald-500 hover:bg-emerald-500/10'}`} title="Upload Image">

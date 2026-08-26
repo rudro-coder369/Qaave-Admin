@@ -3,10 +3,9 @@ import { taxonomyApi } from '../../services/taxonomyService';
 import { examService } from '../../services/examService';
 import toast, { Toaster } from 'react-hot-toast';
 import { 
-  Calendar, Clock, BookOpen, PlusCircle, CheckCircle, Radio, 
-  Layers, AlignLeft, CalendarClock, Settings2, CheckSquare, 
-  Loader2, Users, Target, GraduationCap, RefreshCcw, Database,
-  Trash2, Edit, XCircle 
+  Calendar, Clock, BookOpen, CheckCircle, Radio, 
+  CalendarClock, CheckSquare, Loader2, Target, GraduationCap, 
+  RefreshCcw, Database, Trash2, Edit, XCircle, Archive
 } from 'lucide-react';
 
 import LiveExamExcelUpload from './LiveExamExcelUpload'; 
@@ -18,6 +17,9 @@ export default function LiveExams() {
   const [loading, setLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [isSavingQuestion, setIsSavingQuestion] = useState(false);
+  
+  // 🚀 TABS FOR TIMELINE (Active vs History)
+  const [activeTab, setActiveTab] = useState('active'); // 'active' | 'history'
 
   const [editMode, setEditMode] = useState(null); 
   const [previewQuestions, setPreviewQuestions] = useState([]);
@@ -38,6 +40,13 @@ export default function LiveExams() {
   useEffect(() => { 
     taxonomyApi.getSubjects().then(setSubjects).catch(err => toast.error(err.message));
     loadExams();
+    
+    // UI Update interval to refresh Live/Ended status dynamically
+    const interval = setInterval(() => {
+      setScheduledExams([...scheduledExams]);
+    }, 60000); // refresh every minute
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -85,7 +94,6 @@ export default function LiveExams() {
   const handleDeployOrUpdate = async (e) => {
     e.preventDefault();
     
-    // 🛑 Duplicate Check (Strict)
     if (!editMode) {
       const isDuplicate = scheduledExams.some(schedule => {
         if (!schedule.exams) return false;
@@ -152,26 +160,21 @@ export default function LiveExams() {
     });
     setEditMode({ schedulerId: schedule.id, examId: exam.id });
     setPreviewQuestions([]);
+    setActiveTab('active');
     toast("Edit mode active. Change details and click Update.", { icon: '✍️' });
   };
 
-  // 🗑️ DELETE EXAM (Fixed Silent Failure)
   const handleDeleteExam = async (schedulerId, examId) => {
     if (!window.confirm("Are you sure you want to completely delete this pending exam?")) return;
     try {
       setIsFetching(true);
       await examService.deleteScheduledExam(schedulerId, examId);
-      
-      // Update UI Instantly
       setScheduledExams(prev => prev.filter(s => s.id !== schedulerId));
-      
-      if (editMode?.schedulerId === schedulerId) {
-        cancelEdit();
-      }
+      if (editMode?.schedulerId === schedulerId) cancelEdit();
       toast.success("Scheduled exam deleted successfully!");
     } catch (error) {
       toast.error("Delete failed: " + error.message);
-      loadExams(); // Reload to revert UI if DB failed
+      loadExams(); 
     } finally {
       setIsFetching(false);
     }
@@ -188,6 +191,23 @@ export default function LiveExams() {
     const d = new Date(isoString);
     return d.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
   };
+
+  // ==========================================
+  // 🚀 MAGIC MATH LOGIC (Real-time Filtering)
+  // ==========================================
+  const now = new Date();
+  
+  const filteredExams = scheduledExams.filter(schedule => {
+    const runAt = new Date(schedule.run_at);
+    const durationMin = schedule.exams?.duration_minutes || 0;
+    const endTime = new Date(runAt.getTime() + durationMin * 60000);
+    
+    if (activeTab === 'active') {
+      return endTime > now; // Upcoming or currently Live
+    } else {
+      return endTime <= now; // Ended (History)
+    }
+  });
 
   return (
     <div className="flex flex-col h-[calc(100vh-100px)] text-slate-200">
@@ -219,7 +239,7 @@ export default function LiveExams() {
             COLUMN 1: SETUP FORM
         ========================================== */}
         <div className="xl:col-span-4 bg-[#0B0F19] rounded-2xl shadow-lg border border-[#1E293B] flex flex-col h-full overflow-hidden relative">
-          
+          {/* Form Content - Same as before */}
           {editMode && (
             <div className="absolute top-0 left-0 right-0 bg-amber-500/90 text-black text-[10px] font-black uppercase tracking-widest py-1.5 text-center z-20 flex items-center justify-center gap-2 shadow-lg">
               <Edit className="w-3.5 h-3.5" /> Editing Existing Exam
@@ -258,7 +278,7 @@ export default function LiveExams() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Subject & Chapter (Optional for edit)</label>
+                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Subject & Chapter</label>
                 <select className="w-full p-2.5 mb-3 bg-[#0B0F19] border border-[#1E293B] rounded-xl focus:ring-1 focus:ring-[#2563EB] outline-none text-xs font-bold text-slate-300" 
                         value={selectedSub} onChange={(e) => setSelectedSub(e.target.value)}>
                   <option value="">-- Choose Subject --</option>
@@ -294,7 +314,6 @@ export default function LiveExams() {
                 placeholder="Exam Label (e.g. Physics Mega Test)"
                 value={examForm.title} onChange={(e) => setExamForm({...examForm, title: e.target.value})}
               />
-              
               <div className="grid grid-cols-2 gap-4">
                 <input 
                   type="date" required
@@ -307,7 +326,6 @@ export default function LiveExams() {
                   value={examForm.time} onChange={(e) => setExamForm({...examForm, time: e.target.value})}
                 />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <input 
                   type="number" placeholder="Duration (Min)" required min="1"
@@ -321,9 +339,7 @@ export default function LiveExams() {
                 />
               </div>
             </div>
-
           </div>
-
           <div className="p-4 border-t border-[#1E293B] bg-[#07090E]/50 shrink-0">
              <button onClick={handleGeneratePreview} disabled={isPreviewLoading} className="w-full py-3 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500 hover:text-white border border-indigo-500/20 rounded-xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2">
                {isPreviewLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <RefreshCcw className="w-4 h-4" />}
@@ -344,17 +360,12 @@ export default function LiveExams() {
               <span className="px-3 py-1 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-black text-[10px] uppercase tracking-widest rounded-lg">
                 {previewQuestions.length} / {examForm.totalQuestions} Qs
               </span>
-              <button onClick={handleGeneratePreview} className="p-1.5 bg-slate-800 hover:bg-indigo-500 text-slate-300 hover:text-white rounded-lg transition-all" title="Shuffle Questions">
-                <RefreshCcw className="w-3.5 h-3.5" />
-              </button>
             </div>
           </div>
-          
           <div className="flex-1 p-4 overflow-y-auto space-y-3 custom-scrollbar">
             {isPreviewLoading ? (
                <div className="flex flex-col items-center justify-center h-full text-slate-500">
                  <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-3" />
-                 <p className="text-[10px] font-bold uppercase tracking-widest">Shuffling Repository...</p>
                </div>
             ) : previewQuestions.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-slate-500 opacity-60">
@@ -364,78 +375,98 @@ export default function LiveExams() {
             ) : (
               previewQuestions.map((q, idx) => (
                 <div key={q.id} className="p-3 bg-[#07090E]/50 border border-[#1E293B] rounded-xl flex gap-3 group">
-                  <div className="shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-slate-800 text-[10px] font-bold text-slate-400 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+                  <div className="shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-slate-800 text-[10px] font-bold text-slate-400">
                     {idx + 1}
                   </div>
                   <div className="flex-1">
-                    <p className="text-xs text-slate-300 font-medium line-clamp-2 leading-relaxed">
-                      {q.question_text}
-                    </p>
-                    <div className="flex gap-2 mt-2">
-                       <span className="text-[8px] uppercase tracking-widest font-black text-slate-500 px-1.5 py-0.5 bg-slate-800 rounded">
-                         Diff: {q.difficulty}
-                       </span>
-                    </div>
+                    <p className="text-xs text-slate-300 font-medium line-clamp-2 leading-relaxed">{q.question_text}</p>
                   </div>
                 </div>
               ))
             )}
           </div>
-
           <div className="p-4 border-t border-[#1E293B] bg-[#07090E]/50 shrink-0 flex gap-2">
              {editMode && (
-               <button onClick={cancelEdit} className="px-4 py-4 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white rounded-xl font-black transition-all" title="Cancel Edit">
+               <button onClick={cancelEdit} className="px-4 py-4 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white rounded-xl font-black transition-all">
                  <XCircle className="w-5 h-5" />
                </button>
              )}
              <button 
                 onClick={handleDeployOrUpdate} 
                 disabled={loading || (!editMode && previewQuestions.length === 0)} 
-                className={`flex-1 py-4 text-white rounded-xl font-black text-xs uppercase tracking-widest transform hover:-translate-y-0.5 transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-                  editMode 
-                    ? 'bg-amber-600 hover:bg-amber-500 shadow-[0_0_20px_rgba(217,119,6,0.3)] border border-amber-500/50' 
-                    : 'bg-[#2563EB] hover:bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.3)] border border-blue-500/50'
+                className={`flex-1 py-4 text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50 ${
+                  editMode ? 'bg-amber-600 hover:bg-amber-500 border border-amber-500/50' : 'bg-[#2563EB] hover:bg-blue-600 border border-blue-500/50'
                 }`}
              >
                {loading ? <Loader2 className="w-5 h-5 animate-spin"/> : (editMode ? <Edit className="w-5 h-5" /> : <Target className="w-5 h-5" />)}
-               {loading ? (editMode ? 'Updating...' : 'Deploying...') : (editMode ? 'Update Final Exam' : 'Deploy Final Exam')}
+               {editMode ? 'Update Final Exam' : 'Deploy Final Exam'}
              </button>
           </div>
         </div>
 
         {/* ==========================================
-            COLUMN 3: EXECUTION TIMELINE
+            COLUMN 3: EXECUTION TIMELINE (DYNAMIC STATUS)
         ========================================== */}
         <div className="xl:col-span-4 flex flex-col bg-[#0B0F19] rounded-2xl shadow-lg border border-[#1E293B] overflow-hidden">
-          <div className="p-4 bg-[#07090E]/80 border-b border-[#1E293B] flex justify-between items-center shrink-0">
-            <h2 className="text-xs font-extrabold text-slate-300 uppercase tracking-widest flex items-center gap-2">
-              <CheckSquare className="w-4 h-4 text-emerald-500" /> 3. Timeline
-            </h2>
-            <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-black text-[10px] uppercase tracking-widest rounded-lg">
-              {scheduledExams.length} Active
-            </span>
+          
+          <div className="p-4 bg-[#07090E]/80 border-b border-[#1E293B] flex flex-col shrink-0">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xs font-extrabold text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                <CheckSquare className="w-4 h-4 text-emerald-500" /> 3. Timeline
+              </h2>
+            </div>
+            
+            {/* 🚀 Active / History Tabs */}
+            <div className="flex bg-[#07090E] p-1 rounded-xl border border-[#1E293B]">
+              <button 
+                onClick={() => setActiveTab('active')}
+                className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
+                  activeTab === 'active' ? 'bg-[#2563EB] text-white shadow-md' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Active / Upcoming
+              </button>
+              <button 
+                onClick={() => setActiveTab('history')}
+                className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
+                  activeTab === 'history' ? 'bg-slate-700 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Ended / History
+              </button>
+            </div>
           </div>
           
           <div className="flex-1 p-4 overflow-y-auto space-y-4 custom-scrollbar">
             {isFetching ? (
                <div className="flex flex-col items-center justify-center h-full text-slate-500">
                  <Loader2 className="w-8 h-8 animate-spin text-emerald-500 mb-3" />
-                 <p className="text-[10px] font-bold uppercase tracking-widest">Syncing Timeline...</p>
                </div>
-            ) : scheduledExams.length === 0 ? (
+            ) : filteredExams.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-slate-500 opacity-60">
-                <Calendar className="w-12 h-12 mb-3 text-slate-600" />
-                <p className="text-[10px] font-bold uppercase tracking-widest">No deployments found.</p>
+                {activeTab === 'active' ? <Calendar className="w-12 h-12 mb-3 text-slate-600" /> : <Archive className="w-12 h-12 mb-3 text-slate-600" />}
+                <p className="text-[10px] font-bold uppercase tracking-widest">No {activeTab} exams found.</p>
               </div>
             ) : (
-              scheduledExams.map((schedule) => {
-                const isPending = schedule.status === 'pending';
+              filteredExams.map((schedule) => {
                 const exam = schedule.exams;
+                const runAt = new Date(schedule.run_at);
+                const durationMin = exam?.duration_minutes || 0;
+                const endTime = new Date(runAt.getTime() + durationMin * 60000);
                 
+                // Real-time status logic
+                const isUpcoming = now < runAt;
+                const isLive = now >= runAt && now < endTime;
+                const isEnded = now >= endTime;
+
                 return (
                   <div key={schedule.id} className={`bg-[#07090E]/50 p-4 rounded-xl border hover:border-[#2563EB]/40 transition-all flex relative overflow-hidden group ${editMode?.schedulerId === schedule.id ? 'border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.1)]' : 'border-[#1E293B]'}`}>
                     
-                    <div className={`absolute left-0 top-0 bottom-0 w-1 transition-colors duration-300 ${isPending ? 'bg-amber-500 group-hover:bg-amber-400' : 'bg-emerald-500 group-hover:bg-emerald-400'}`}></div>
+                    {/* Status Color Bar */}
+                    <div className={`absolute left-0 top-0 bottom-0 w-1 transition-colors duration-300 ${
+                      isLive ? 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]' : 
+                      isUpcoming ? 'bg-[#2563EB]' : 'bg-slate-600'
+                    }`}></div>
 
                     <div className="pl-2 flex-1 flex flex-col gap-3">
                       <h3 className="font-bold text-slate-200 text-sm mb-1">{exam?.title || "Untitled Exam"}</h3>
@@ -453,28 +484,32 @@ export default function LiveExams() {
                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
                            <Clock className="w-3 h-3"/> {formatDateTime(schedule.run_at)}
                          </span>
+                         {/* Dynamic Badge */}
                          <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1 ${
-                           isPending ? 'text-amber-400 bg-amber-500/10' : 'text-emerald-400 bg-emerald-500/10'
+                           isLive ? 'text-rose-400 bg-rose-500/10 border border-rose-500/20' : 
+                           isUpcoming ? 'text-blue-400 bg-blue-500/10 border border-blue-500/20' : 
+                           'text-slate-400 bg-slate-800 border border-slate-700'
                          }`}>
-                           {isPending ? <Clock className="w-2.5 h-2.5"/> : <CheckCircle className="w-2.5 h-2.5"/>}
-                           {schedule.status}
+                           {isLive ? <Radio className="w-2.5 h-2.5 animate-pulse"/> : 
+                            isUpcoming ? <Clock className="w-2.5 h-2.5"/> : 
+                            <CheckCircle className="w-2.5 h-2.5"/>}
+                           {isLive ? 'LIVE NOW' : (isUpcoming ? 'UPCOMING' : 'ENDED')}
                          </span>
                       </div>
                     </div>
 
-                    {isPending && (
+                    {/* Only show Edit/Delete if NOT ended */}
+                    {!isEnded && (
                       <div className="flex flex-col gap-1.5 ml-2 border-l border-[#1E293B] pl-3 justify-center shrink-0">
                         <button 
                           onClick={() => handleEditClick(schedule)}
                           className="p-1.5 bg-blue-500/10 hover:bg-blue-500 hover:text-white text-blue-400 border border-blue-500/20 rounded-md transition-all"
-                          title="Edit Exam"
                         >
                           <Edit className="w-3.5 h-3.5" />
                         </button>
                         <button 
                           onClick={() => handleDeleteExam(schedule.id, exam?.id)}
                           className="p-1.5 bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-400 border border-rose-500/20 rounded-md transition-all"
-                          title="Delete Exam"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

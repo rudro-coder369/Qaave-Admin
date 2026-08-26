@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { taxonomyApi } from '../../services/taxonomyService';
 import toast, { Toaster } from 'react-hot-toast';
-import { Folder, FileText, Bookmark, Plus, ChevronRight, X, LayoutGrid, Layers, CheckCircle2, Trash2, CornerDownRight, Pencil, Loader2, AlertTriangle } from 'lucide-react';
+import { Folder, FileText, Bookmark, Plus, ChevronRight, X, LayoutGrid, Layers, CheckCircle2, Trash2, CornerDownRight, Pencil, Loader2, AlertTriangle, FileBox, BookOpen } from 'lucide-react';
 
 const CLASS_LEVELS = ['SSC', 'HSC', 'Admission', 'JSC'];
 const BOARD_GROUPS = ['Science', 'Arts', 'Commerce', 'General', 'Common'];
@@ -9,11 +9,17 @@ const BOARD_GROUPS = ['Science', 'Arts', 'Commerce', 'General', 'Common'];
 export default function Taxonomy() {
   const [subjects, setSubjects] = useState([]);
   const [chapters, setChapters] = useState([]);
-  const [topics, setTopics] = useState([]);
+  
+  // 🚀 দুটি আলাদা টপিকের লিস্ট
+  const [topics, setTopics] = useState([]); // Normal Topics (Questions)
+  const [contentTopics, setContentTopics] = useState([]); // Learn Topics (Content)
 
   const [selectedSubject, setSelectedSubject] = useState(null);
   const [selectedChapter, setSelectedChapter] = useState(null);
   
+  // 🚀 Topic Type Toggle (UI State for viewing topics)
+  const [viewTopicType, setViewTopicType] = useState('question'); // 'question' | 'content'
+
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState(null); 
 
@@ -42,6 +48,7 @@ export default function Taxonomy() {
     setSelectedSubject(subject);
     setSelectedChapter(null);
     setTopics([]);
+    setContentTopics([]);
     try {
       const data = await taxonomyApi.getChapters(subject.id);
       const sortedChapters = (data || []).sort((a, b) => String(a.chapter_label || '').localeCompare(String(b.chapter_label || ''), undefined, { numeric: true }));
@@ -54,9 +61,14 @@ export default function Taxonomy() {
   const handleChapterClick = async (chapter) => {
     setSelectedChapter(chapter);
     try {
-      const data = await taxonomyApi.getTopics(chapter.id);
-      const sortedTopics = (data || []).sort((a, b) => a.topic_order - b.topic_order);
-      setTopics(sortedTopics);
+      // 🚀 দুটি টেবিল থেকেই টপিক নিয়ে আসা হচ্ছে
+      const [questionTopicsData, contentTopicsData] = await Promise.all([
+        taxonomyApi.getTopics(chapter.id),
+        taxonomyApi.getContentTopics(chapter.id)
+      ]);
+      
+      setTopics((questionTopicsData || []).sort((a, b) => a.topic_order - b.topic_order));
+      setContentTopics((contentTopicsData || []).sort((a, b) => a.topic_order - b.topic_order));
     } catch (error) {
       toast.error(error.message);
     }
@@ -73,7 +85,7 @@ export default function Taxonomy() {
         boardGroup: item?.board_group || 'Science'
       });
     } 
-    else if (type === 'chapter') { // Main Chapter
+    else if (type === 'chapter') { 
       setFormData({
         isSubChapter: false,
         sectionName: item?.section_name || '',
@@ -82,7 +94,7 @@ export default function Taxonomy() {
         title: item?.title || ''
       });
     } 
-    else if (type === 'sub_chapter') { // 🚀 Sub-Chapter Specific Logic
+    else if (type === 'sub_chapter') { 
       setFormData({
         isSubChapter: true,
         parentChapterId: item ? item.parent_chapter_id : parentItem?.id,
@@ -93,6 +105,7 @@ export default function Taxonomy() {
     } 
     else if (type === 'topic') {
       setFormData({
+        topicType: item ? (item.isContentTopic ? 'content' : 'question') : viewTopicType, // 👈 New Field
         topicOrder: item?.topic_order || '',
         stars: item?.importance_stars || 1,
         title: item?.title || ''
@@ -111,8 +124,10 @@ export default function Taxonomy() {
     }
 
     if (modal.type === 'topic') {
-      const isDuplicateOrder = topics.some(t => t.topic_order === parseInt(formData.topicOrder) && t.id !== editingId);
-      if (isDuplicateOrder) return toast.error(`Topic Order ${formData.topicOrder} is already in use!`);
+      // Check duplicate in the specific table
+      const targetList = formData.topicType === 'content' ? contentTopics : topics;
+      const isDuplicateOrder = targetList.some(t => t.topic_order === parseInt(formData.topicOrder) && t.id !== editingId);
+      if (isDuplicateOrder) return toast.error(`Topic Order ${formData.topicOrder} is already in use for ${formData.topicType === 'content' ? 'Content' : 'Questions'}!`);
     }
 
     setLoading(true);
@@ -158,18 +173,36 @@ export default function Taxonomy() {
         }
       } 
       else if (modal.type === 'topic') {
-        if (editingId) {
-          const updatedTopic = await taxonomyApi.updateTopic(editingId, parseInt(formData.topicOrder), formData.title, parseInt(formData.stars || 1));
-          if (updatedTopic && updatedTopic.id) {
-            setTopics(prev => prev.map(t => t.id === editingId ? updatedTopic : t).sort((a, b) => a.topic_order - b.topic_order));
-            toast.success("Topic updated successfully.");
-          } else throw new Error("Update blocked by Database RLS!");
+        // 🚀 ROUTING LOGIC BASED ON TOPIC TYPE
+        if (formData.topicType === 'content') {
+          if (editingId) {
+            const updatedTopic = await taxonomyApi.updateContentTopic(editingId, parseInt(formData.topicOrder), formData.title, parseInt(formData.stars || 1));
+            if (updatedTopic && updatedTopic.id) {
+              setContentTopics(prev => prev.map(t => t.id === editingId ? updatedTopic : t).sort((a, b) => a.topic_order - b.topic_order));
+              toast.success("Content Topic updated.");
+            } else throw new Error("Update blocked by Database RLS!");
+          } else {
+            const newTopic = await taxonomyApi.addContentTopic(selectedChapter.id, parseInt(formData.topicOrder), formData.title, parseInt(formData.stars || 1));
+            if (newTopic && newTopic.id) {
+              setContentTopics(prev => [...prev, newTopic].sort((a, b) => a.topic_order - b.topic_order));
+              toast.success("Content Topic added.");
+            } else throw new Error("Insert blocked by Database RLS!");
+          }
         } else {
-          const newTopic = await taxonomyApi.addTopic(selectedChapter.id, parseInt(formData.topicOrder), formData.title, parseInt(formData.stars || 1));
-          if (newTopic && newTopic.id) {
-            setTopics(prev => [...prev, newTopic].sort((a, b) => a.topic_order - b.topic_order));
-            toast.success("Topic added successfully.");
-          } else throw new Error("Insert blocked by Database RLS!");
+          // Question Topic
+          if (editingId) {
+            const updatedTopic = await taxonomyApi.updateTopic(editingId, parseInt(formData.topicOrder), formData.title, parseInt(formData.stars || 1));
+            if (updatedTopic && updatedTopic.id) {
+              setTopics(prev => prev.map(t => t.id === editingId ? updatedTopic : t).sort((a, b) => a.topic_order - b.topic_order));
+              toast.success("Question Topic updated.");
+            } else throw new Error("Update blocked by Database RLS!");
+          } else {
+            const newTopic = await taxonomyApi.addTopic(selectedChapter.id, parseInt(formData.topicOrder), formData.title, parseInt(formData.stars || 1));
+            if (newTopic && newTopic.id) {
+              setTopics(prev => [...prev, newTopic].sort((a, b) => a.topic_order - b.topic_order));
+              toast.success("Question Topic added.");
+            } else throw new Error("Insert blocked by Database RLS!");
+          }
         }
       }
       setModal({ isOpen: false, type: '' });
@@ -180,7 +213,7 @@ export default function Taxonomy() {
     }
   };
 
-  const requestDelete = (e, type, id) => {
+  const requestDelete = (e, type, item) => {
     e.stopPropagation();
     let message = '';
     let onConfirm = null;
@@ -188,32 +221,37 @@ export default function Taxonomy() {
     if (type === 'subject') {
       message = 'Deleting this subject will also permanently delete all its chapters and topics!';
       onConfirm = async () => {
-        setDeletingId(id);
+        setDeletingId(item.id);
         try {
-          await taxonomyApi.deleteSubject(id);
-          setSubjects(prev => prev.filter(s => s.id !== id));
-          if (selectedSubject?.id === id) { setSelectedSubject(null); setChapters([]); setTopics([]); }
+          await taxonomyApi.deleteSubject(item.id);
+          setSubjects(prev => prev.filter(s => s.id !== item.id));
+          if (selectedSubject?.id === item.id) { setSelectedSubject(null); setChapters([]); setTopics([]); setContentTopics([]); }
           toast.success("Subject deleted.");
         } catch (error) { toast.error(error.message); } finally { setDeletingId(null); }
       };
     } else if (type === 'chapter') {
       message = 'Deleting this chapter will also delete all its sub-chapters and topics!';
       onConfirm = async () => {
-        setDeletingId(id);
+        setDeletingId(item.id);
         try {
-          await taxonomyApi.deleteChapter(id);
-          setChapters(prev => prev.filter(c => c.id !== id && c.parent_chapter_id !== id));
-          if (selectedChapter?.id === id || selectedChapter?.parent_chapter_id === id) { setSelectedChapter(null); setTopics([]); }
+          await taxonomyApi.deleteChapter(item.id);
+          setChapters(prev => prev.filter(c => c.id !== item.id && c.parent_chapter_id !== item.id));
+          if (selectedChapter?.id === item.id || selectedChapter?.parent_chapter_id === item.id) { setSelectedChapter(null); setTopics([]); setContentTopics([]); }
           toast.success("Chapter deleted.");
         } catch (error) { toast.error(error.message); } finally { setDeletingId(null); }
       };
     } else if (type === 'topic') {
-      message = 'Are you sure you want to delete this topic?';
+      message = `Are you sure you want to delete this ${item.isContentTopic ? 'Content' : 'Question'} topic?`;
       onConfirm = async () => {
-        setDeletingId(id);
+        setDeletingId(item.id);
         try {
-          await taxonomyApi.deleteTopic(id);
-          setTopics(prev => prev.filter(t => t.id !== id));
+          if (item.isContentTopic) {
+            await taxonomyApi.deleteContentTopic(item.id);
+            setContentTopics(prev => prev.filter(t => t.id !== item.id));
+          } else {
+            await taxonomyApi.deleteTopic(item.id);
+            setTopics(prev => prev.filter(t => t.id !== item.id));
+          }
           toast.success("Topic deleted.");
         } catch (error) { toast.error(error.message); } finally { setDeletingId(null); }
       };
@@ -288,14 +326,13 @@ export default function Taxonomy() {
         </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
-        {/* 🚀 QUICK ADD SUB-CHAPTER BUTTON (Only on main chapters) */}
         {!isSub && (
           <button onClick={(e) => { e.stopPropagation(); openModal('sub_chapter', null, chap); }} className={`p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 ${selectedChapter?.id === chap.id ? 'text-white hover:bg-blue-700' : 'text-emerald-400 hover:bg-emerald-500/10'}`} title="Add Sub-Chapter">
             <Plus className="w-4 h-4" />
           </button>
         )}
         <button onClick={(e) => { e.stopPropagation(); openModal(isSub ? 'sub_chapter' : 'chapter', chap); }} disabled={deletingId === chap.id} className={`p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 ${selectedChapter?.id === chap.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-blue-400 hover:bg-blue-500/10'}`}><Pencil className="w-4 h-4" /></button>
-        <button onClick={(e) => requestDelete(e, 'chapter', chap.id)} disabled={deletingId === chap.id} className={`p-2 rounded-xl transition-all duration-200 ${deletingId === chap.id ? 'opacity-100 text-rose-500' : 'opacity-0 group-hover:opacity-100'} ${selectedChapter?.id === chap.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}`}>
+        <button onClick={(e) => requestDelete(e, 'chapter', chap)} disabled={deletingId === chap.id} className={`p-2 rounded-xl transition-all duration-200 ${deletingId === chap.id ? 'opacity-100 text-rose-500' : 'opacity-0 group-hover:opacity-100'} ${selectedChapter?.id === chap.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}`}>
           {deletingId === chap.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
         </button>
         <ChevronRight className={`w-4 h-4 transition-transform ml-1 ${selectedChapter?.id === chap.id ? 'opacity-100 translate-x-1' : 'opacity-0 group-hover:opacity-100'}`} />
@@ -335,7 +372,7 @@ export default function Taxonomy() {
                 </div>
                 <div className="flex items-center gap-1">
                   <button onClick={(e) => { e.stopPropagation(); openModal('subject', sub); }} disabled={deletingId === sub.id} className={`p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 ${selectedSubject?.id === sub.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-blue-400 hover:bg-blue-500/10'}`}><Pencil className="w-4 h-4" /></button>
-                  <button onClick={(e) => requestDelete(e, 'subject', sub.id)} disabled={deletingId === sub.id} className={`p-2 rounded-xl transition-all duration-200 ${deletingId === sub.id ? 'opacity-100 text-rose-500' : 'opacity-0 group-hover:opacity-100'} ${selectedSubject?.id === sub.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}`}>
+                  <button onClick={(e) => requestDelete(e, 'subject', sub)} disabled={deletingId === sub.id} className={`p-2 rounded-xl transition-all duration-200 ${deletingId === sub.id ? 'opacity-100 text-rose-500' : 'opacity-0 group-hover:opacity-100'} ${selectedSubject?.id === sub.id ? 'text-blue-200 hover:text-white hover:bg-blue-700' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}`}>
                     {deletingId === sub.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                   </button>
                   <ChevronRight className={`w-4 h-4 transition-transform ml-1 ${selectedSubject?.id === sub.id ? 'opacity-100 translate-x-1' : 'opacity-0 group-hover:opacity-100'}`} />
@@ -362,36 +399,61 @@ export default function Taxonomy() {
           </div>
         </div>
 
-        {/* Column 3: Topics */}
+        {/* Column 3: Topics (With Toggle) */}
         <div className="bg-[#0B0F19] rounded-3xl shadow-lg border border-[#1E293B] flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-[#1E293B] flex justify-between items-center bg-[#07090E]/50">
-            <h2 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-              <div className="p-1.5 bg-[#2563EB]/10 border border-[#2563EB]/20 rounded-lg"><Bookmark className="w-4 h-4 text-[#2563EB]" /></div> Topics
-            </h2>
-            <button onClick={() => openModal('topic')} disabled={!selectedChapter} className="text-[#2563EB] bg-[#2563EB]/10 hover:bg-[#2563EB] hover:text-white border border-[#2563EB]/20 p-1.5 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed"><Plus className="w-4 h-4" /></button>
+          <div className="p-4 border-b border-[#1E293B] flex flex-col bg-[#07090E]/50 gap-3">
+            <div className="flex justify-between items-center">
+              <h2 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                <div className="p-1.5 bg-[#2563EB]/10 border border-[#2563EB]/20 rounded-lg"><Bookmark className="w-4 h-4 text-[#2563EB]" /></div> Topics
+              </h2>
+              <button onClick={() => openModal('topic')} disabled={!selectedChapter} className="text-[#2563EB] bg-[#2563EB]/10 hover:bg-[#2563EB] hover:text-white border border-[#2563EB]/20 p-1.5 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed"><Plus className="w-4 h-4" /></button>
+            </div>
+            
+            {/* 🚀 Topic Type Toggle */}
+            <div className="flex bg-[#0B0F19] p-1 rounded-xl border border-[#1E293B]">
+              <button 
+                onClick={() => setViewTopicType('question')}
+                className={`flex-1 py-1.5 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
+                  viewTopicType === 'question' ? 'bg-[#2563EB] text-white shadow-md' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <FileBox className="w-3 h-3" /> Questions
+              </button>
+              <button 
+                onClick={() => setViewTopicType('content')}
+                className={`flex-1 py-1.5 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
+                  viewTopicType === 'content' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <BookOpen className="w-3 h-3" /> Content / Learn
+              </button>
+            </div>
           </div>
+
           <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
             {!selectedChapter ? (
               <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs font-medium">
                 <Layers className="w-12 h-12 mb-3 opacity-10 text-slate-400" /> <p>Select a Chapter first</p>
               </div>
-            ) : topics.map(topic => (
-              <div key={topic.id} className="p-4 rounded-2xl bg-transparent hover:bg-[#1E293B]/40 border border-transparent hover:border-[#1E293B] flex justify-between items-center transition-all duration-200 group relative">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="w-5 h-5 rounded-md bg-[#2563EB]/10 border border-[#2563EB]/20 text-[#2563EB] flex items-center justify-center text-[10px] font-black">{topic.topic_order}</span>
-                    <span className="text-[10px] font-bold text-slate-500 tracking-widest">{Array(topic.importance_stars).fill('★').join('')}</span>
+            ) : (
+              (viewTopicType === 'content' ? contentTopics : topics).map(topic => (
+                <div key={topic.id} className="p-4 rounded-2xl bg-transparent hover:bg-[#1E293B]/40 border border-transparent hover:border-[#1E293B] flex justify-between items-center transition-all duration-200 group relative">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`w-5 h-5 rounded-md border flex items-center justify-center text-[10px] font-black ${viewTopicType === 'content' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-[#2563EB]/10 border-[#2563EB]/20 text-[#2563EB]'}`}>{topic.topic_order}</span>
+                      <span className="text-[10px] font-bold text-slate-500 tracking-widest">{Array(topic.importance_stars).fill('★').join('')}</span>
+                    </div>
+                    <div className="font-bold text-slate-200 text-sm group-hover:text-white transition-colors">{topic.title}</div>
                   </div>
-                  <div className="font-bold text-slate-200 text-sm group-hover:text-white transition-colors">{topic.title}</div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                    <button onClick={(e) => { e.stopPropagation(); openModal('topic', { ...topic, isContentTopic: viewTopicType === 'content' }); }} disabled={deletingId === topic.id} className="p-2 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-xl"><Pencil className="w-4 h-4" /></button>
+                    <button onClick={(e) => requestDelete(e, 'topic', { ...topic, isContentTopic: viewTopicType === 'content' })} disabled={deletingId === topic.id} className={`p-2 transition-all duration-200 rounded-xl ${deletingId === topic.id ? 'opacity-100 text-rose-500' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}`}>
+                      {deletingId === topic.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
-                  <button onClick={(e) => { e.stopPropagation(); openModal('topic', topic); }} disabled={deletingId === topic.id} className="p-2 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-xl"><Pencil className="w-4 h-4" /></button>
-                  <button onClick={(e) => requestDelete(e, 'topic', topic.id)} disabled={deletingId === topic.id} className={`p-2 transition-all duration-200 rounded-xl ${deletingId === topic.id ? 'opacity-100 text-rose-500' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'}`}>
-                    {deletingId === topic.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -447,7 +509,6 @@ export default function Taxonomy() {
                         onChange={(e) => setFormData({...formData, sectionName: e.target.value})} 
                       />
                       <div className="flex flex-wrap gap-2">
-                        {/* 🚀 UX FIX: Specific Bangla Sections only */}
                         {['গদ্য', 'পদ্য'].map(chip => (
                           <button 
                             key={chip} type="button" 
@@ -460,7 +521,6 @@ export default function Taxonomy() {
                       </div>
                     </div>
                   ) : (
-                    // 🚀 Sub-Chapter Read-Only Parent Display
                     <div className="flex items-center gap-3 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
                        <CornerDownRight className="w-5 h-5 text-emerald-500/60 shrink-0" />
                        <div>
@@ -486,14 +546,39 @@ export default function Taxonomy() {
               {/* TOPIC FIELDS */}
               {modal.type === 'topic' && (
                 <>
+                  {/* 🚀 TOOGLE INSIDE ADD/EDIT MODAL */}
+                  <div className="bg-[#07090E]/50 p-4 rounded-xl border border-[#1E293B] mb-2">
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-3 ml-1 text-center">Where to save this topic?</label>
+                    <div className="flex bg-[#0B0F19] p-1.5 rounded-xl border border-[#1E293B]">
+                      <button 
+                        type="button"
+                        onClick={() => setFormData({...formData, topicType: 'question'})}
+                        className={`flex-1 py-2.5 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
+                          formData.topicType === 'question' ? 'bg-[#2563EB] text-white shadow-md' : 'text-slate-500 hover:text-slate-300'
+                        }`}
+                      >
+                        <FileBox className="w-4 h-4" /> Questions DB
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setFormData({...formData, topicType: 'content'})}
+                        className={`flex-1 py-2.5 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
+                          formData.topicType === 'content' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'
+                        }`}
+                      >
+                        <BookOpen className="w-4 h-4" /> Learn DB
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Topic Order</label>
-                      <input type="number" required autoFocus min="1" placeholder="e.g. 1" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" value={formData.topicOrder || ''} onChange={(e) => setFormData({...formData, topicOrder: e.target.value})} />
+                      <input type="number" required min="1" placeholder="e.g. 1" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring={formData.topicType === 'content' ? 'emerald-500' : '#2563EB'} text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" value={formData.topicOrder || ''} onChange={(e) => setFormData({...formData, topicOrder: e.target.value})} />
                     </div>
                     <div>
                       <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Importance</label>
-                      <select className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-300 font-bold outline-none shadow-inner text-sm" value={formData.stars || 1} onChange={(e) => setFormData({...formData, stars: e.target.value})}>
+                      <select className={`w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 text-slate-300 font-bold outline-none shadow-inner text-sm ${formData.topicType === 'content' ? 'focus:ring-emerald-500' : 'focus:ring-[#2563EB]'}`} value={formData.stars || 1} onChange={(e) => setFormData({...formData, stars: e.target.value})}>
                         <option value="1">★ 1 Star</option>
                         <option value="2">★★ 2 Stars</option>
                         <option value="3">★★★ 3 Stars</option>
@@ -502,12 +587,12 @@ export default function Taxonomy() {
                   </div>
                   <div>
                     <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2 ml-1">Topic Title</label>
-                    <input type="text" required placeholder="e.g. Distance & Displacement" className="w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 focus:ring-[#2563EB] text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600" value={formData.title || ''} onChange={(e) => setFormData({...formData, title: e.target.value})} />
+                    <input type="text" required placeholder="e.g. Distance & Displacement" className={`w-full p-3.5 bg-[#07090E] border border-slate-800/90 rounded-2xl focus:ring-2 text-slate-100 outline-none transition-all shadow-inner text-sm font-medium placeholder:text-slate-600 ${formData.topicType === 'content' ? 'focus:ring-emerald-500' : 'focus:ring-[#2563EB]'}`} value={formData.title || ''} onChange={(e) => setFormData({...formData, title: e.target.value})} />
                   </div>
                 </>
               )}
 
-              <button type="submit" disabled={loading} className="w-full py-3.5 rounded-2xl text-white font-black text-sm uppercase tracking-wide transition-all shadow-lg hover:-translate-y-0.5 mt-2 disabled:opacity-50 flex justify-center items-center gap-2 border border-blue-500 bg-[#2563EB] hover:bg-blue-600 shadow-[#2563EB]/20">
+              <button type="submit" disabled={loading} className={`w-full py-3.5 rounded-2xl text-white font-black text-sm uppercase tracking-wide transition-all shadow-lg hover:-translate-y-0.5 mt-2 disabled:opacity-50 flex justify-center items-center gap-2 border ${modal.type === 'topic' && formData.topicType === 'content' ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-500 shadow-emerald-500/20' : 'bg-[#2563EB] hover:bg-blue-600 border-blue-500 shadow-[#2563EB]/20'}`}>
                 {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving Data...</> : (editingId ? `Update ${modal.type.replace('_', ' ')}` : `Save ${modal.type.replace('_', ' ')}`)}
               </button>
             </form>

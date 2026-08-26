@@ -33,10 +33,10 @@ export const taxonomyApi = {
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
-      .select(); // 🚀 Removed .single()
+      .select(); 
       
     if (error) throw error;
-    return data[0]; // 🚀 Returning first object
+    return data[0]; 
   },
 
   deleteSubject: async (id) => {
@@ -90,10 +90,10 @@ export const taxonomyApi = {
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
-      .select(); // 🚀 Removed .single()
+      .select(); 
       
     if (error) throw error;
-    return data[0]; // 🚀 Returning first object
+    return data[0]; 
   },
 
   deleteChapter: async (id) => {
@@ -102,7 +102,7 @@ export const taxonomyApi = {
     return true;
   },
 
-  // ================= TOPICS =================
+  // ================= TOPICS (For Questions / 5 Features) =================
   getTopics: async (chapterId) => {
     const { data, error } = await supabase.from('topics').select('*').eq('chapter_id', chapterId).order('topic_order', { ascending: true });
     if (error) throw error;
@@ -129,14 +129,63 @@ export const taxonomyApi = {
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
-      .select(); // 🚀 Removed .single()
+      .select(); 
       
     if (error) throw error;
-    return data[0]; // 🚀 Returning first object
+    return data[0]; 
   },
 
   deleteTopic: async (id) => {
     const { error } = await supabase.from('topics').delete().eq('id', id);
+    if (error) throw error;
+    return true;
+  },
+
+  // ================= CONTENT TOPICS (For Learn Feature) =================
+  getContentTopics: async (chapterId) => {
+    const { data, error } = await supabase
+      .from('content_topics')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .order('topic_order', { ascending: true });
+    if (error) throw error;
+    return data;
+  },
+
+  addContentTopic: async (chapterId, topicOrder, title, importance) => {
+    const slug = generateSlug(title) + '-content-' + Date.now().toString().slice(-4);
+    const { data, error } = await supabase.from('content_topics').insert([{
+      chapter_id: chapterId, 
+      topic_order: topicOrder, 
+      title: title, 
+      slug: slug, 
+      importance_stars: importance, 
+      status: 'published'
+    }]).select();
+    
+    if (error) throw error;
+    return data[0];
+  },
+
+  // 🚀 Update Content Topic
+  updateContentTopic: async (id, topicOrder, title, importance) => {
+    const { data, error } = await supabase
+      .from('content_topics')
+      .update({ 
+        topic_order: topicOrder, 
+        title: title, 
+        importance_stars: importance,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select(); 
+      
+    if (error) throw error;
+    return data[0]; 
+  },
+
+  deleteContentTopic: async (id) => {
+    const { error } = await supabase.from('content_topics').delete().eq('id', id);
     if (error) throw error;
     return true;
   }

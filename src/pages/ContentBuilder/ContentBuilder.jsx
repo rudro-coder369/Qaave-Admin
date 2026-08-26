@@ -44,7 +44,8 @@ export default function ContentBuilder() {
 
   useEffect(() => {
     if (selectedChap) {
-      taxonomyApi.getTopics(selectedChap).then(setTopics).catch(err => toast.error(err.message));
+      // 🚀 FIXED: শুধুমাত্র Learn ফিচারের জন্য content_topics ফেচ করা হচ্ছে
+      taxonomyApi.getContentTopics(selectedChap).then(setTopics).catch(err => toast.error(err.message));
       setSelectedTop(''); setBlocks([]);
     }
   }, [selectedChap]);
@@ -202,7 +203,7 @@ export default function ContentBuilder() {
             className="flex-1 p-2.5 bg-[#2563EB]/5 border border-[#2563EB]/20 rounded-xl focus:ring-2 focus:ring-[#2563EB] outline-none shadow-inner disabled:opacity-40 text-xs font-black text-blue-300" 
             value={selectedTop} onChange={(e) => setSelectedTop(e.target.value)} disabled={!selectedChap}
           >
-            <option value="" className="bg-[#07090E] text-slate-400">3. Select Topic</option>
+            <option value="" className="bg-[#07090E] text-slate-400">3. Select Content Topic</option>
             {topics.map(t => <option key={t.id} value={t.id} className="bg-[#07090E]">{t.topic_order}. {t.title}</option>)}
           </select>
         </div>

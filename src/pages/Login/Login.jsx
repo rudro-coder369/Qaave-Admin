@@ -1,5 +1,8 @@
 import { useState } from 'react';
-import { supabase } from '../../config/supabase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../../config/firebase'; // ফায়ারবেস অথ
+import { supabase } from '../../config/supabase'; // 👈 সুপাবেস ইমপোর্ট করা হলো
+import { useNavigate } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 import { BookOpen } from 'lucide-react';
 
@@ -7,22 +10,37 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      // ১. ফায়ারবেস দিয়ে লগইন
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
 
-    if (error) {
-      toast.error(error.message);
-    } else {
+      // ২. সুপাবেস এজ ফাংশন কল করে 'role: authenticated' ক্লেইম বসানো এবং প্রোফাইল সিঙ্ক করা
+      const token = await userCredential.user.getIdToken();
+      await supabase.functions.invoke('ensure-profile', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      // ৩. নতুন ক্লেইমসহ টোকেন ফোর্স-রিফ্রেশ করা (সবচেয়ে গুরুত্বপূর্ণ, এটি না থাকলে 401 এরর আসবে)
+      await userCredential.user.getIdToken(true);
+
       toast.success('Successfully logged in!');
+      
+      // 🚀 সফল লগইনের পর ড্যাশবোর্ডে রিডাইরেক্ট করা
+      setTimeout(() => {
+        navigate('/', { replace: true });
+      }, 1000); 
+
+    } catch (error) {
+      toast.error(error.message || 'Login Failed');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (

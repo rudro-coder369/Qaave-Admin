@@ -52,13 +52,14 @@ export const dashboardService = {
     try {
       let todayStr = '';
       try {
-        // 🔥 FIXED: Convert to exact Bangladesh Timezone (Asia/Dhaka)
-        const timeRes = await fetch('https://worldtimeapi.org/api/timezone/Asia/Dhaka');
-        const timeData = await timeRes.json();
+        // 🔥 BUG FIXED: Removed unreliable WorldTimeAPI. Using direct Database RPC.
+        const { data: serverTime, error: rpcError } = await supabase.rpc('get_server_time');
         
-        // timeData.datetime looks like "2026-08-12T00:45:00.123456+06:00"
-        // We parse it into a Date object
-        const bdDate = new Date(timeData.datetime);
+        if (rpcError || !serverTime) {
+          throw rpcError || new Error("Failed to fetch server time");
+        }
+        
+        const bdDate = new Date(serverTime);
         
         // Convert to YYYY-MM-DD specifically for Asia/Dhaka
         const year = bdDate.toLocaleString("en-US", { timeZone: "Asia/Dhaka", year: "numeric" });
@@ -67,7 +68,7 @@ export const dashboardService = {
         
         todayStr = `${year}-${month}-${day}`;
       } catch (e) {
-        console.warn("Time API failed, using fallback device time");
+        console.warn("Server time API failed, using fallback device time", e);
         const fallbackDate = new Date();
         const year = fallbackDate.toLocaleString("en-US", { timeZone: "Asia/Dhaka", year: "numeric" });
         const month = fallbackDate.toLocaleString("en-US", { timeZone: "Asia/Dhaka", month: "2-digit" });

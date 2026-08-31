@@ -5,7 +5,8 @@ import AdminLayout from './components/Layout/AdminLayout';
 
 import Dashboard from './pages/Dashboard/Dashboard';
 import Taxonomy from './pages/Taxonomy/Taxonomy';
-import ContentBuilder from './pages/ContentBuilder/ContentBuilder';
+// 🚀 ContentBuilder ইমপোর্ট করা আছে
+import ContentBuilder from './pages/ContentStudio/ContentStudio.jsx';
 import QuestionBank from './pages/QuestionBank/QuestionBank';
 import LiveExams from './pages/LiveExams/LiveExams';
 
@@ -35,6 +36,7 @@ function AppRoutes() {
       <Route path="/" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
         <Route path="taxonomy" element={<Taxonomy />} />
+        {/* 🚀 FIX: <contentDocumentService /> এর বদলে <ContentBuilder /> বসানো হয়েছে */}
         <Route path="content" element={<ContentBuilder />} />
         <Route path="questions" element={<QuestionBank />} />
         <Route path="exams" element={<LiveExams />} />

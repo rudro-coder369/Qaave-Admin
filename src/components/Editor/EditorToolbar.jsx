@@ -4,7 +4,7 @@ import {
   Code, Quote, List, ListOrdered, 
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Undo, Redo, Minus, Eraser, Link as LinkIcon, Image as ImageIcon,
-  FileCode2, Loader2
+  FileCode2, Loader2, Sigma, Highlighter, Palette
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -44,7 +44,6 @@ export default function EditorToolbar({ editor }) {
       const data = await response.json();
 
       if (data.secure_url) {
-        // 🚀 Insert Image into Tiptap Editor at current cursor position
         editor.chain().focus().setImage({ src: data.secure_url }).run();
         toast.success("Image uploaded successfully!", { id: toastId });
       } else {
@@ -83,14 +82,50 @@ export default function EditorToolbar({ editor }) {
       
       <Divider />
 
+      {/* Font Family Selector */}
+      <select 
+        onChange={(e) => editor.chain().focus().setFontFamily(e.target.value).run()} 
+        className="bg-[#0B0F19] border border-[#1E293B] text-slate-300 text-[11px] font-medium rounded p-1.5 outline-none focus:border-[#2563EB] cursor-pointer"
+        title="Font Family"
+      >
+        <option value="">Default Font</option>
+        <option value="Inter">Inter</option>
+        <option value="Arial">Arial</option>
+        <option value="Times New Roman">Times New Roman</option>
+        <option value="Courier New">Monospace</option>
+      </select>
+
+      <Divider />
+
       {/* Typography */}
       <ToolbarButton onClick={() => editor.chain().focus().toggleBold().run()} isActive={editor.isActive('bold')} icon={Bold} label="Bold" />
       <ToolbarButton onClick={() => editor.chain().focus().toggleItalic().run()} isActive={editor.isActive('italic')} icon={Italic} label="Italic" />
       <ToolbarButton onClick={() => editor.chain().focus().toggleUnderline().run()} isActive={editor.isActive('underline')} icon={UnderlineIcon} label="Underline" />
       <ToolbarButton onClick={() => editor.chain().focus().toggleStrike().run()} isActive={editor.isActive('strike')} icon={Strikethrough} label="Strikethrough" />
-      <ToolbarButton onClick={() => editor.chain().focus().toggleCode().run()} isActive={editor.isActive('code')} icon={Code} label="Inline Code" />
       <ToolbarButton onClick={() => editor.chain().focus().unsetAllMarks().run()} icon={Eraser} label="Clear Formatting" />
       
+      <Divider />
+
+      {/* Colors & Highlights */}
+      <div className="relative flex items-center justify-center p-2 rounded-lg hover:bg-[#1E293B] cursor-pointer transition-colors" title="Text Color">
+        <Palette className="w-4 h-4 text-slate-400" />
+        <input 
+          type="color" 
+          onInput={(e) => editor.chain().focus().setColor(e.target.value).run()} 
+          value={editor.getAttributes('textStyle').color || '#ffffff'} 
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        />
+      </div>
+      
+      <div className="relative flex items-center justify-center p-2 rounded-lg hover:bg-[#1E293B] cursor-pointer transition-colors" title="Highlight Color">
+        <Highlighter className="w-4 h-4 text-slate-400" />
+        <input 
+          type="color" 
+          onInput={(e) => editor.chain().focus().toggleHighlight({ color: e.target.value }).run()} 
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        />
+      </div>
+
       <Divider />
 
       {/* Headings */}
@@ -112,16 +147,15 @@ export default function EditorToolbar({ editor }) {
       <ToolbarButton onClick={() => editor.chain().focus().toggleBulletList().run()} isActive={editor.isActive('bulletList')} icon={List} label="Bullet List" />
       <ToolbarButton onClick={() => editor.chain().focus().toggleOrderedList().run()} isActive={editor.isActive('orderedList')} icon={ListOrdered} label="Numbered List" />
       <ToolbarButton onClick={() => editor.chain().focus().toggleBlockquote().run()} isActive={editor.isActive('blockquote')} icon={Quote} label="Blockquote" />
-      <ToolbarButton onClick={() => editor.chain().focus().toggleCodeBlock().run()} isActive={editor.isActive('codeBlock')} icon={FileCode2} label="Code Block" />
       
       <Divider />
 
-      {/* Inserts */}
+      {/* Math & Inserts */}
+      <ToolbarButton onClick={() => editor.chain().focus().insertContent({ type: 'mathNode' }).run()} icon={Sigma} label="Add Math Equation" />
       <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()} icon={Minus} label="Horizontal Rule" />
-      
       <ToolbarButton onClick={() => alert('Link insertion coming in next phase!')} isActive={editor.isActive('link')} icon={LinkIcon} label="Add Link" />
       
-      {/* 🚀 Cloudinary Image Upload Trigger Button */}
+      {/* 🚀 Cloudinary Image Upload */}
       <ToolbarButton 
         onClick={() => fileInputRef.current?.click()} 
         disabled={isUploading} 
@@ -129,7 +163,6 @@ export default function EditorToolbar({ editor }) {
         label="Add Image via Cloudinary" 
       />
 
-      {/* Hidden File Input for Image Selection */}
       <input 
         type="file" 
         ref={fileInputRef} 
@@ -137,7 +170,6 @@ export default function EditorToolbar({ editor }) {
         accept="image/*" 
         className="hidden" 
       />
-
     </div>
   );
 }

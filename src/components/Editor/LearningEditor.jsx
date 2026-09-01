@@ -2,7 +2,15 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
-import Image from '@tiptap/extension-image'; // 🚀 Added Tiptap Image Extension for Cloudinary
+import Image from '@tiptap/extension-image';
+
+// 🚀 FIX: Added curly braces {} for Named Exports
+import { TextStyle } from '@tiptap/extension-text-style'; 
+import { Color } from '@tiptap/extension-color'; 
+import { Highlight } from '@tiptap/extension-highlight'; 
+import { FontFamily } from '@tiptap/extension-font-family'; 
+
+import MathNode from './extensions/MathNode'; 
 import EditorToolbar from './EditorToolbar';
 import { useEffect } from 'react';
 
@@ -11,16 +19,36 @@ export default function LearningEditor({ initialContent, onUpdate }) {
     extensions: [
       StarterKit.configure({
         underline: false, 
+        bulletList: {
+          HTMLAttributes: { class: 'list-disc ml-6 space-y-2 text-slate-300 marker:text-slate-500' },
+        },
+        orderedList: {
+          HTMLAttributes: { class: 'list-decimal ml-6 space-y-2 text-slate-300 marker:text-slate-500 font-medium' },
+        },
+        listItem: {
+          HTMLAttributes: { class: 'pl-2 leading-relaxed' },
+        },
+        heading: {
+          HTMLAttributes: { class: 'text-white font-black tracking-tight mt-8 mb-4' }
+        },
+        paragraph: {
+          HTMLAttributes: { class: 'leading-relaxed text-slate-300 mb-4' }
+        }
       }),
       Underline,
       Image.configure({
         HTMLAttributes: {
-          class: 'max-w-full rounded-xl my-4 border border-[#1E293B]', // Optional styling for uploaded images
+          class: 'max-w-full rounded-xl my-6 border border-[#1E293B] mx-auto shadow-lg', 
         },
-      }), // 🚀 Configured Image Extension
+      }), 
       TextAlign.configure({ 
         types: ['heading', 'paragraph'] 
       }),
+      TextStyle, 
+      Color, 
+      Highlight.configure({ multicolor: true }), 
+      FontFamily, 
+      MathNode,
     ],
     content: initialContent || { type: 'doc', content: [] },
     editorProps: {

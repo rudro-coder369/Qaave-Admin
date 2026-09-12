@@ -18,21 +18,22 @@ export default function LiveExams() {
   const [isFetching, setIsFetching] = useState(false);
   const [isSavingQuestion, setIsSavingQuestion] = useState(false);
   
-  // 🚀 TABS FOR TIMELINE (Active vs History)
-  const [activeTab, setActiveTab] = useState('active'); // 'active' | 'history'
-
+  const [activeTab, setActiveTab] = useState('active'); 
   const [editMode, setEditMode] = useState(null); 
   const [previewQuestions, setPreviewQuestions] = useState([]);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
   const [selectedSub, setSelectedSub] = useState('');
+  
+  // 👈 Modified examForm to hold arrays for Chapters
   const [examForm, setExamForm] = useState({
     title: '',
     date: '',
     time: '22:00',
     duration: 25, 
     totalQuestions: 25, 
-    selectedChapterId: '', 
+    selectedChapterIds: [], // Array for Database
+    syllabusDetails: [], // Array for App Routine UI
     targetClass: 'SSC',       
     targetBatchYear: 2027     
   });
@@ -40,11 +41,7 @@ export default function LiveExams() {
   useEffect(() => { 
     taxonomyApi.getSubjects().then(setSubjects).catch(err => toast.error(err.message));
     loadExams();
-    
-    // UI Update interval to refresh Live/Ended status dynamically
-    const interval = setInterval(() => {
-      setScheduledExams([...scheduledExams]);
-    }, 60000); // refresh every minute
+    const interval = setInterval(() => setScheduledExams([...scheduledExams]), 60000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -67,14 +64,31 @@ export default function LiveExams() {
     }
   };
 
+  // 👈 Multiple Chapters Selection Logic
+  const handleChapterToggle = (chapter, isChecked) => {
+    setExamForm(prev => {
+      const newIds = isChecked 
+        ? [...prev.selectedChapterIds, chapter.id] 
+        : prev.selectedChapterIds.filter(id => id !== chapter.id);
+        
+      const syllabusString = `Ch ${chapter.chapter_number}: ${chapter.title}`;
+      const newSyllabus = isChecked 
+        ? [...prev.syllabusDetails, syllabusString]
+        : prev.syllabusDetails.filter(s => s !== syllabusString);
+
+      return { ...prev, selectedChapterIds: newIds, syllabusDetails: newSyllabus };
+    });
+  };
+
   const handleGeneratePreview = async (e) => {
     if (e) e.preventDefault();
-    if (!examForm.selectedChapterId) return toast.error("Please select a Chapter first!");
+    if (examForm.selectedChapterIds.length === 0) return toast.error("Please select at least one Chapter!");
     if (!examForm.totalQuestions || examForm.totalQuestions < 1) return toast.error("Invalid question count!");
 
     try {
       setIsPreviewLoading(true);
-      const questions = await examService.generateQuestionPool([examForm.selectedChapterId], examForm.totalQuestions);
+      // Passing array of IDs
+      const questions = await examService.generateQuestionPool(examForm.selectedChapterIds, examForm.totalQuestions);
       setPreviewQuestions(questions);
       
       if (questions.length === 0) {
@@ -122,19 +136,19 @@ export default function LiveExams() {
         await examService.updateScheduledExam(
           editMode.schedulerId, editMode.examId, examForm.title, runAt, examForm.duration,
           examForm.targetClass, examForm.targetBatchYear,
-          examForm.selectedChapterId ? [examForm.selectedChapterId] : null, finalQuestionIds
+          examForm.selectedChapterIds, finalQuestionIds, examForm.syllabusDetails
         );
         toast.success("Live Exam Updated Successfully!");
       } else {
         await examService.scheduleLiveExam(
           examForm.title, runAt, examForm.duration, examForm.targetClass,
-          examForm.targetBatchYear, [examForm.selectedChapterId], finalQuestionIds 
+          examForm.targetBatchYear, examForm.selectedChapterIds, finalQuestionIds, examForm.syllabusDetails
         );
         toast.success("Live Exam Deployed Successfully!");
       }
       
       loadExams();
-      setExamForm({ ...examForm, title: '', selectedChapterId: '' });
+      setExamForm({ ...examForm, title: '', selectedChapterIds: [], syllabusDetails: [] });
       setPreviewQuestions([]);
       setEditMode(null);
     } catch (error) {
@@ -151,17 +165,21 @@ export default function LiveExams() {
     const pad = (n) => n.toString().padStart(2, '0');
     const dateStr = `${localDate.getFullYear()}-${pad(localDate.getMonth() + 1)}-${pad(localDate.getDate())}`;
     const timeStr = `${pad(localDate.getHours())}:${pad(localDate.getMinutes())}`;
+    
+    // Safety check for JSON array
+    const existingSyllabus = Array.isArray(exam.syllabus_details) ? exam.syllabus_details : [];
 
     setExamForm({
       ...examForm,
       title: exam.title, date: dateStr, time: timeStr, duration: exam.duration_minutes,
       totalQuestions: exam.total_questions, targetClass: exam.target_class, targetBatchYear: exam.target_batch_year,
-      selectedChapterId: '' 
+      selectedChapterIds: [], // User needs to re-select if updating chapters
+      syllabusDetails: existingSyllabus 
     });
     setEditMode({ schedulerId: schedule.id, examId: exam.id });
     setPreviewQuestions([]);
     setActiveTab('active');
-    toast("Edit mode active. Change details and click Update.", { icon: '✍️' });
+    toast("Edit mode active. Select chapters to update.", { icon: '✍️' });
   };
 
   const handleDeleteExam = async (schedulerId, examId) => {
@@ -182,7 +200,7 @@ export default function LiveExams() {
 
   const cancelEdit = () => {
     setEditMode(null);
-    setExamForm({ ...examForm, title: '', selectedChapterId: '' });
+    setExamForm({ ...examForm, title: '', selectedChapterIds: [], syllabusDetails: [] });
     setPreviewQuestions([]); 
     toast("Edit mode cancelled.");
   };
@@ -192,9 +210,6 @@ export default function LiveExams() {
     return d.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
   };
 
-  // ==========================================
-  // 🚀 MAGIC MATH LOGIC (Real-time Filtering)
-  // ==========================================
   const now = new Date();
   
   const filteredExams = scheduledExams.filter(schedule => {
@@ -203,9 +218,9 @@ export default function LiveExams() {
     const endTime = new Date(runAt.getTime() + durationMin * 60000);
     
     if (activeTab === 'active') {
-      return endTime > now; // Upcoming or currently Live
+      return endTime > now; 
     } else {
-      return endTime <= now; // Ended (History)
+      return endTime <= now; 
     }
   });
 
@@ -213,7 +228,7 @@ export default function LiveExams() {
     <div className="flex flex-col h-[calc(100vh-100px)] text-slate-200">
       <Toaster position="top-right" toastOptions={{ style: { background: '#0B0F19', color: '#F1F5F9', border: '1px solid #1E293B' } }} />
       
-      {/* 🚀 Top Header */}
+      {/* Top Header */}
       <div className="bg-gradient-to-r from-[#0B0F19] to-[#07090E] p-5 rounded-2xl border border-[#1E293B] mb-5 flex flex-col lg:flex-row items-center justify-between gap-4 shrink-0 shadow-[0_0_40px_rgba(37,99,235,0.05)] relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
         <div className="flex items-center gap-4 w-full lg:w-auto z-10">
@@ -239,7 +254,6 @@ export default function LiveExams() {
             COLUMN 1: SETUP FORM
         ========================================== */}
         <div className="xl:col-span-4 bg-[#0B0F19] rounded-2xl shadow-lg border border-[#1E293B] flex flex-col h-full overflow-hidden relative">
-          {/* Form Content - Same as before */}
           {editMode && (
             <div className="absolute top-0 left-0 right-0 bg-amber-500/90 text-black text-[10px] font-black uppercase tracking-widest py-1.5 text-center z-20 flex items-center justify-center gap-2 shadow-lg">
               <Edit className="w-3.5 h-3.5" /> Editing Existing Exam
@@ -278,17 +292,33 @@ export default function LiveExams() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Subject & Chapter</label>
-                <select className="w-full p-2.5 mb-3 bg-[#0B0F19] border border-[#1E293B] rounded-xl focus:ring-1 focus:ring-[#2563EB] outline-none text-xs font-bold text-slate-300" 
+                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Subject & Chapters (Multiple)</label>
+                <select className="w-full p-2.5 mb-2 bg-[#0B0F19] border border-[#1E293B] rounded-xl focus:ring-1 focus:ring-[#2563EB] outline-none text-xs font-bold text-slate-300" 
                         value={selectedSub} onChange={(e) => setSelectedSub(e.target.value)}>
                   <option value="">-- Choose Subject --</option>
                   {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
-                <select className="w-full p-2.5 bg-[#0B0F19] border border-[#1E293B] rounded-xl focus:ring-1 focus:ring-[#2563EB] outline-none text-xs font-bold text-slate-300 disabled:opacity-40" 
-                        value={examForm.selectedChapterId} onChange={(e) => setExamForm({...examForm, selectedChapterId: e.target.value})} disabled={!selectedSub} required={!editMode}>
-                  <option value="">-- Choose Chapter --</option>
-                  {chapters.map(c => <option key={c.id} value={c.id}>Ch {c.chapter_number}: {c.title}</option>)}
-                </select>
+                
+                {/* 👈 New Checkbox List for Multiple Chapters */}
+                <div className="max-h-36 overflow-y-auto custom-scrollbar bg-[#07090E] border border-[#1E293B] rounded-xl p-3 space-y-2">
+                  {chapters.length === 0 ? (
+                    <p className="text-[10px] text-slate-500 text-center py-2">Select a subject to view chapters</p>
+                  ) : (
+                    chapters.map(c => (
+                      <label key={c.id} className="flex items-center gap-3 cursor-pointer group">
+                        <input 
+                          type="checkbox" 
+                          className="w-4 h-4 rounded border-[#1E293B] bg-[#0B0F19] text-[#2563EB] focus:ring-[#2563EB] focus:ring-offset-0 focus:ring-offset-transparent cursor-pointer"
+                          checked={examForm.selectedChapterIds.includes(c.id)}
+                          onChange={(e) => handleChapterToggle(c, e.target.checked)}
+                        />
+                        <span className="text-xs font-medium text-slate-300 group-hover:text-white transition-colors">
+                          Ch {c.chapter_number}: {c.title}
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
 
@@ -298,7 +328,7 @@ export default function LiveExams() {
                </h3>
                <LiveExamExcelUpload 
                  selectedSub={selectedSub}
-                 selectedChap={examForm.selectedChapterId}
+                 selectedChap={examForm.selectedChapterIds.length > 0 ? examForm.selectedChapterIds[0] : null} // Passes first selected chapter for excel upload binding
                  selectedTop={null} 
                  boards={[]} 
                  fetchQuestions={handleGeneratePreview} 
@@ -405,7 +435,7 @@ export default function LiveExams() {
         </div>
 
         {/* ==========================================
-            COLUMN 3: EXECUTION TIMELINE (DYNAMIC STATUS)
+            COLUMN 3: EXECUTION TIMELINE
         ========================================== */}
         <div className="xl:col-span-4 flex flex-col bg-[#0B0F19] rounded-2xl shadow-lg border border-[#1E293B] overflow-hidden">
           
@@ -416,7 +446,6 @@ export default function LiveExams() {
               </h2>
             </div>
             
-            {/* 🚀 Active / History Tabs */}
             <div className="flex bg-[#07090E] p-1 rounded-xl border border-[#1E293B]">
               <button 
                 onClick={() => setActiveTab('active')}
@@ -454,7 +483,6 @@ export default function LiveExams() {
                 const durationMin = exam?.duration_minutes || 0;
                 const endTime = new Date(runAt.getTime() + durationMin * 60000);
                 
-                // Real-time status logic
                 const isUpcoming = now < runAt;
                 const isLive = now >= runAt && now < endTime;
                 const isEnded = now >= endTime;
@@ -462,7 +490,6 @@ export default function LiveExams() {
                 return (
                   <div key={schedule.id} className={`bg-[#07090E]/50 p-4 rounded-xl border hover:border-[#2563EB]/40 transition-all flex relative overflow-hidden group ${editMode?.schedulerId === schedule.id ? 'border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.1)]' : 'border-[#1E293B]'}`}>
                     
-                    {/* Status Color Bar */}
                     <div className={`absolute left-0 top-0 bottom-0 w-1 transition-colors duration-300 ${
                       isLive ? 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]' : 
                       isUpcoming ? 'bg-[#2563EB]' : 'bg-slate-600'
@@ -484,7 +511,6 @@ export default function LiveExams() {
                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
                            <Clock className="w-3 h-3"/> {formatDateTime(schedule.run_at)}
                          </span>
-                         {/* Dynamic Badge */}
                          <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1 ${
                            isLive ? 'text-rose-400 bg-rose-500/10 border border-rose-500/20' : 
                            isUpcoming ? 'text-blue-400 bg-blue-500/10 border border-blue-500/20' : 
@@ -498,7 +524,6 @@ export default function LiveExams() {
                       </div>
                     </div>
 
-                    {/* Only show Edit/Delete if NOT ended */}
                     {!isEnded && (
                       <div className="flex flex-col gap-1.5 ml-2 border-l border-[#1E293B] pl-3 justify-center shrink-0">
                         <button 

@@ -15,7 +15,7 @@ export const examService = {
     return data;
   },
 
-  // 🎲 UI-তে প্রিভিউ এবং শাফেল করার জন্য প্রশ্নাবলি (Pool) ফেচ করা
+  // 🎲 UI-তে প্রিভিউ এবং শাফেল করার জন্য প্রশ্নাবলি (Pool) ফেচ করা (মাল্টিপল চ্যাপ্টার সাপোর্টেড)
   generateQuestionPool: async (chapterIds, limit) => {
     const { data, error } = await supabase
       .from('questions')
@@ -27,7 +27,7 @@ export const examService = {
         importance,
         mcq_options (*)
       `)
-      .in('chapter_id', chapterIds) 
+      .in('chapter_id', chapterIds) // 👈 এখানে Array of IDs রিসিভ করবে
       .eq('q_type', 'mcq')
       .limit(150); 
 
@@ -37,11 +37,11 @@ export const examService = {
     return shuffled.slice(0, limit); 
   },
 
-  // 🚀 নতুন লাইভ এক্সাম শিডিউল করা
-  scheduleLiveExam: async (title, runAt, durationMin, targetClass, targetBatchYear, chapterIds, finalQuestionIds) => {
-    const totalQuestions = finalQuestionIds.length;
+  // 🚀 নতুন লাইভ এক্সাম শিডিউল করা (Added syllabusDetails)
+  scheduleLiveExam: async (title, runAt, durationMin, targetClass, targetBatchYear, chapterIds, finalQuestionIds, syllabusDetails) => {
+    const totalQuestions = finalQuestionIds ? finalQuestionIds.length : 0;
 
-    // ১. প্রথমে মূল Exam তৈরি করা
+    // ১. প্রথমে মূল Exam তৈরি করা (Syllabus সহ)
     const { data: examData, error: examError } = await supabase
       .from('exams')
       .insert([{
@@ -51,6 +51,7 @@ export const examService = {
         total_questions: totalQuestions,
         target_class: targetClass,           
         target_batch_year: targetBatchYear,  
+        syllabus_details: syllabusDetails, // 👈 রুটিনের জন্য JSONB তে সেভ হবে
         status: 'published'
       }])
       .select();
@@ -59,14 +60,15 @@ export const examService = {
     const examId = examData[0].id;
 
     // ২. exam_questions টেবিলে নির্দিষ্ট প্রশ্নগুলো সেভ করা
-    const examQuestionsData = finalQuestionIds.map((qId, index) => ({
-      exam_id: examId,
-      question_id: qId,
-      order_no: index + 1 
-    }));
-
-    const { error: eqError } = await supabase.from('exam_questions').insert(examQuestionsData);
-    if (eqError) throw eqError;
+    if(finalQuestionIds && finalQuestionIds.length > 0) {
+      const examQuestionsData = finalQuestionIds.map((qId, index) => ({
+        exam_id: examId,
+        question_id: qId,
+        order_no: index + 1 
+      }));
+      const { error: eqError } = await supabase.from('exam_questions').insert(examQuestionsData);
+      if (eqError) throw eqError;
+    }
 
     // ৩. Scheduler টেবিলে এন্ট্রি দেওয়া
     const { data: scheduleData, error: scheduleError } = await supabase
@@ -81,51 +83,50 @@ export const examService = {
     if (scheduleError) throw scheduleError;
     const schedulerId = scheduleData[0].id;
 
-    // ৪. কোন কোন চ্যাপ্টার থেকে প্রশ্ন হয়েছে সেটা ম্যাপ করা
-    const chapterInserts = chapterIds.map(chapId => ({
-      scheduler_id: schedulerId,
-      chapter_id: chapId,
-      is_mandatory: true
-    }));
+    // ৪. কোন কোন চ্যাপ্টার থেকে প্রশ্ন হয়েছে সেটা ম্যাপ করা (Multiple Insert)
+    if(chapterIds && chapterIds.length > 0) {
+      const chapterInserts = chapterIds.map(chapId => ({
+        scheduler_id: schedulerId,
+        chapter_id: chapId,
+        is_mandatory: true
+      }));
 
-    const { error: chapError } = await supabase.from('scheduler_chapters').insert(chapterInserts);
-    if (chapError) throw chapError;
+      const { error: chapError } = await supabase.from('scheduler_chapters').insert(chapterInserts);
+      if (chapError) throw chapError;
+    }
 
     return scheduleData[0];
   },
 
-  // 🗑️ লাইভ এক্সাম ডিলিট করা (১০০% বাগ ফ্রি ম্যানুয়াল ডিলিট)
+  // 🗑️ লাইভ এক্সাম ডিলিট করা
   deleteScheduledExam: async (schedulerId, examId) => {
-    // ১. সবার আগে কানেক্টেড চ্যাপ্টার ডিলিট করা
     await supabase.from('scheduler_chapters').delete().eq('scheduler_id', schedulerId);
 
-    // ২. এবার শিডিউলার ডিলিট করা
     const { data: schedData, error: schedError } = await supabase
       .from('live_exam_scheduler')
       .delete()
       .eq('id', schedulerId)
-      .select(); // 👈 .select() নিশ্চিত করবে যে সত্যি ডিলিট হয়েছে কি না
+      .select();
       
     if (schedError) throw schedError;
-    if (!schedData || schedData.length === 0) throw new Error("Delete failed: Record not found or RLS blocked.");
+    if (!schedData || schedData.length === 0) throw new Error("Delete failed: Record not found.");
 
-    // ৩. এক্সাম এবং তার প্রশ্ন ডিলিট করা
     if (examId) {
       await supabase.from('exam_questions').delete().eq('exam_id', examId);
       const { error: examError } = await supabase.from('exams').delete().eq('id', examId);
       if (examError) throw examError;
     }
-
     return true;
   },
 
   // ✏️ লাইভ এক্সাম এডিট/আপডেট করা
-  updateScheduledExam: async (schedulerId, examId, title, runAt, durationMin, targetClass, targetBatchYear, chapterIds, finalQuestionIds) => {
+  updateScheduledExam: async (schedulerId, examId, title, runAt, durationMin, targetClass, targetBatchYear, chapterIds, finalQuestionIds, syllabusDetails) => {
     const examUpdatePayload = {
       title: title,
       duration_minutes: durationMin,
       target_class: targetClass,
       target_batch_year: targetBatchYear,
+      syllabus_details: syllabusDetails // 👈 Update syllabus
     };
     if (finalQuestionIds && finalQuestionIds.length > 0) {
       examUpdatePayload.total_questions = finalQuestionIds.length;
@@ -154,7 +155,6 @@ export const examService = {
       const { error: chapError } = await supabase.from('scheduler_chapters').insert(chapterInserts);
       if (chapError) throw chapError;
     }
-
     return true;
   }
 };

@@ -2,6 +2,7 @@ import React from 'react';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { UploadCloud } from 'lucide-react';
+// 🚀 FIX: Correctly imported questionService from the services folder
 import { questionService } from '../../services/questionService'; 
 
 export default function ExcelTemplateUpload({ 
@@ -20,7 +21,6 @@ export default function ExcelTemplateUpload({
     let fileName = "";
     
     if (type === 'mcq') {
-      // 🚀 UPDATED: Added Image columns for Statements and Options
       templateData = [{ 
         Type: "mcq", 
         Question_Stem: "নিচের কোনটি ভেক্টর রাশি?", 
@@ -77,7 +77,7 @@ export default function ExcelTemplateUpload({
     XLSX.writeFile(workbook, "Qaave_Upload_Error_Log.xlsx");
   };
 
-  // 🚀 FIXED: Added imagePath check in signature to prevent wrong duplicates
+  // Prevent duplicate logic using exact signatures
   const getSignature = (type, text, optionsArr = []) => {
     const normalizedText = String(text || '').trim().toLowerCase();
     if (type === 'mcq') {
@@ -119,7 +119,6 @@ export default function ExcelTemplateUpload({
         existingQuestions.forEach(q => {
           let optsForSig = [];
           if (q.q_type === 'mcq' && q.mcq_options) {
-            // 🚀 Fetching option_image_path for signature match
             optsForSig = q.mcq_options.map(o => ({ 
               text: o.option_text, 
               imagePath: o.option_image_path, 
@@ -131,7 +130,6 @@ export default function ExcelTemplateUpload({
         });
 
         const fileMap = new Map(); 
-
         const BATCH_SIZE = 15; 
         
         for (let i = 0; i < totalRows; i += BATCH_SIZE) {
@@ -153,7 +151,6 @@ export default function ExcelTemplateUpload({
                 const correctOpt = String(row.Correct_Option_ABCD || '').trim().toUpperCase();
                 if (!['A', 'B', 'C', 'D'].includes(correctOpt)) throw new Error(`Invalid Correct_Option: "${correctOpt}".`);
                 
-                // 🚀 UPDATED: Mapping Excel columns to text and imagePath
                 optionsArray = [
                   { text: String(row.Option_A || '').trim(), imagePath: String(row.Option_A_Image || '').trim() || null, isCorrect: correctOpt === 'A' },
                   { text: String(row.Option_B || '').trim(), imagePath: String(row.Option_B_Image || '').trim() || null, isCorrect: correctOpt === 'B' },
@@ -161,10 +158,8 @@ export default function ExcelTemplateUpload({
                   { text: String(row.Option_D || '').trim(), imagePath: String(row.Option_D_Image || '').trim() || null, isCorrect: correctOpt === 'D' }
                 ];
                 
-                // Ensure at least text or image is present
                 if (optionsArray.some(o => !o.text && !o.imagePath)) throw new Error("One or more MCQ options are entirely empty (No text and No image).");
 
-                // 🚀 UPDATED: Checking both text and image columns for statements
                 if (row.Statement_i || row.Statement_ii || row.Statement_iii || row.Statement_i_Image || row.Statement_ii_Image || row.Statement_iii_Image) {
                    rowMcqStatements = [
                      { text: String(row.Statement_i || '').trim(), imagePath: String(row.Statement_i_Image || '').trim() },
@@ -206,12 +201,16 @@ export default function ExcelTemplateUpload({
               }
 
               const rowCqParts = rowQType === 'cq' ? [
-                { label: 'k', qText: row.Q_K || '', aText: row.Ans_K || '' }, { label: 'kh', qText: row.Q_Kh || '', aText: row.Ans_Kh || '' },
-                { label: 'g', qText: row.Q_G || '', aText: row.Ans_G || '' }, { label: 'gh', qText: row.Q_Gh || '', aText: row.Ans_Gh || '' }
+                { label: 'k', qText: String(row.Q_K || '').trim(), aText: String(row.Ans_K || '').trim(), explanation: '' }, 
+                { label: 'kh', qText: String(row.Q_Kh || '').trim(), aText: String(row.Ans_Kh || '').trim(), explanation: '' },
+                { label: 'g', qText: String(row.Q_G || '').trim(), aText: String(row.Ans_G || '').trim(), explanation: '' }, 
+                { label: 'gh', qText: String(row.Q_Gh || '').trim(), aText: String(row.Ans_Gh || '').trim(), explanation: '' }
               ] : null;
               
               if (rowQType === 'cq' && rowCqParts.some(p => !p.qText.trim())) throw new Error("CQ missing questions.");
               
+              // 🚀 FIX: Payload specifically sends plain string properties. 
+              // `questionService` will handle turning them into JSON appropriately for the database.
               const payload = {
                 subjectId: selectedSub, chapterId: selectedChap, topicId: selectedTop || null,
                 qType: rowQType, text: text, imagePath: row.Image_URL || null,
@@ -333,13 +332,13 @@ export default function ExcelTemplateUpload({
             e.target.value = ''; 
           } 
         }} 
-        className="px-3 py-2.5 bg-[#0B0F19] text-slate-300 border border-slate-700 hover:bg-slate-800 rounded-lg text-[10px] font-black uppercase tracking-widest cursor-pointer outline-none"
+        className="px-3 py-2.5 bg-[#0a0a0a] text-zinc-300 border border-zinc-800 hover:border-emerald-500/50 hover:bg-emerald-500/10 rounded-lg text-[10px] font-black uppercase tracking-widest cursor-pointer outline-none transition-colors"
       >
-        <option value="" className="bg-[#0B0F19]">📥 Template</option>
-        <option value="mcq" className="bg-[#0B0F19]">MCQ</option>
-        <option value="sq1" className="bg-[#0B0F19]">SQ(1)</option>
-        <option value="sq2" className="bg-[#0B0F19]">SQ(2)</option>
-        <option value="cq" className="bg-[#0B0F19]">CQ</option>
+        <option value="" className="bg-[#0a0a0a]">📥 Template</option>
+        <option value="mcq" className="bg-[#0a0a0a]">MCQ</option>
+        <option value="sq1" className="bg-[#0a0a0a]">SQ(1)</option>
+        <option value="sq2" className="bg-[#0a0a0a]">SQ(2)</option>
+        <option value="cq" className="bg-[#0a0a0a]">CQ</option>
       </select>
       
       <label htmlFor="excel-upload" className="cursor-pointer flex items-center gap-1.5 px-4 py-2.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500 hover:text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-sm">

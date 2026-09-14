@@ -28,7 +28,7 @@ export function useQuestionBankLogic() {
   const [standaloneImageUrl, setStandaloneImageUrl] = useState('');
   const [isUploadingStandalone, setIsUploadingStandalone] = useState(false);
 
-  // Form States
+  // Form States - Explanation and Solution can now be JSON objects
   const [qType, setQType] = useState('mcq');
   const [newQ, setNewQ] = useState({
     text: '', imagePath: '', explanation: '', solution: '', 
@@ -49,9 +49,12 @@ export function useQuestionBankLogic() {
     { text: '', imagePath: '', isCorrect: false }, { text: '', imagePath: '', isCorrect: false }
   ]);
   
+  // 🚀 UPDATED: Added `explanation` to CQ Parts to support rich text explanations
   const [cqParts, setCqParts] = useState([
-    { label: 'k', qText: '', aText: '' }, { label: 'kh', qText: '', aText: '' },
-    { label: 'g', qText: '', aText: '' }, { label: 'gh', qText: '', aText: '' }
+    { label: 'k', qText: '', aText: '', explanation: '' }, 
+    { label: 'kh', qText: '', aText: '', explanation: '' },
+    { label: 'g', qText: '', aText: '', explanation: '' }, 
+    { label: 'gh', qText: '', aText: '', explanation: '' }
   ]);
 
   const boardsMap = useMemo(() => {
@@ -101,7 +104,12 @@ export function useQuestionBankLogic() {
       { text: '', imagePath: '', isCorrect: true }, { text: '', imagePath: '', isCorrect: false }, 
       { text: '', imagePath: '', isCorrect: false }, { text: '', imagePath: '', isCorrect: false }
     ]);
-    setCqParts([{ label: 'k', qText: '', aText: '' }, { label: 'kh', qText: '', aText: '' }, { label: 'g', qText: '', aText: '' }, { label: 'gh', qText: '', aText: '' }]);
+    setCqParts([
+      { label: 'k', qText: '', aText: '', explanation: '' }, 
+      { label: 'kh', qText: '', aText: '', explanation: '' }, 
+      { label: 'g', qText: '', aText: '', explanation: '' }, 
+      { label: 'gh', qText: '', aText: '', explanation: '' }
+    ]);
   };
 
   const handleSubjectChange = async (e) => {
@@ -139,6 +147,7 @@ export function useQuestionBankLogic() {
     const type = q.q_type === 'sq' ? 'sq1' : q.q_type === 'written' ? 'sq2' : q.q_type;
     setQType(type);
     
+    // 🚀 JSON objects will flow directly into state here
     setNewQ({
       text: q.question_text || '',
       imagePath: q.question_image_path || '',
@@ -179,7 +188,12 @@ export function useQuestionBankLogic() {
     if (q.q_type === 'cq' && q.cq_parts) {
       const parts = ['k', 'kh', 'g', 'gh'].map(label => {
         const existing = q.cq_parts.find(p => p.label === label);
-        return { label, qText: existing?.question_text || '', aText: existing?.answer_text || '' };
+        return { 
+          label, 
+          qText: existing?.question_text || '', 
+          aText: existing?.answer_text || '',
+          explanation: existing?.explanation || ''
+        };
       });
       setCqParts(parts);
     }
@@ -272,12 +286,22 @@ export function useQuestionBankLogic() {
     e.preventDefault();
     if (!selectedChap) return toast.error("Please select a subject and chapter first.");
     
-    if (!newQ.text.trim()) return toast.error("The main question text cannot be empty.");
+    if (!newQ.text) return toast.error("The main question text cannot be empty.");
 
+    // 🔥 FIX 1 for Logic: Formatting MCQ statements properly before sending
+    let processedMcqStatements = null;
     if (qType === 'mcq' && isPolyMCQ) {
-      const filledCount = mcqStatements.filter(s => s.text.trim() !== '' || s.imagePath.trim() !== '').length;
+      const filledCount = mcqStatements.filter(s => s.text || s.imagePath).length;
       if (filledCount !== 0 && filledCount !== 3) {
         return toast.error("For multiple completion, please fill all 3 statements.");
+      }
+      
+      // Ensure we send a valid array of objects if poly-mcq is enabled
+      if (filledCount === 3) {
+        processedMcqStatements = mcqStatements.map(stmt => ({
+          text: stmt.text || '', // Can be Tiptap JSON or plain string
+          imagePath: stmt.imagePath || ''
+        }));
       }
     }
 
@@ -286,13 +310,18 @@ export function useQuestionBankLogic() {
 
     const payload = {
       subjectId: selectedSub, chapterId: selectedChap, topicId: selectedTop || null,
-      qType: actualQType, text: newQ.text.trim(), imagePath: ['mcq', 'cq'].includes(qType) ? newQ.imagePath : null,
-      explanation: newQ.explanation.trim(), solution: newQ.solution.trim(), importance: newQ.importance,
-      isExamMaterial: newQ.isExamMaterial, isContentMaterial: newQ.isContentMaterial,
+      qType: actualQType, 
+      text: newQ.text, 
+      imagePath: ['mcq', 'cq'].includes(qType) ? newQ.imagePath : null,
+      explanation: newQ.explanation, 
+      solution: newQ.solution, 
+      importance: newQ.importance,
+      isExamMaterial: newQ.isExamMaterial, 
+      isContentMaterial: newQ.isContentMaterial,
       optionsArray: qType === 'mcq' ? options : null, 
       cqParts: qType === 'cq' ? cqParts : null,
       boardTags: ['mcq', 'cq'].includes(qType) ? validBoardTags : [],
-      mcqStatements: (qType === 'mcq' && isPolyMCQ) ? mcqStatements : null
+      mcqStatements: processedMcqStatements // Sent properly formulated array
     };
 
     try {
@@ -332,6 +361,6 @@ export function useQuestionBankLogic() {
     // Handlers
     resetForm, handleSubjectChange, handleChapterChange, handleTopicChange, handleEditClick, 
     handleDeleteQuestion, handleStandaloneImageUpload, handleDynamicImageUpload, 
-    addBoardTag, updateBoardYear, removeBoardTag, handleAddOrUpdateQuestion,
+    addBoardTag, updateBoardYear, removeBoardTag, handleAddOrUpdateQuestion, setQuestions
   };
 }

@@ -1,14 +1,27 @@
 import { supabase } from '../config/supabase';
 
+// 🚀 Helper: Safely Format Rich Text (Tiptap JSON or HTML) for TEXT columns
+const formatRichText = (content) => {
+  if (!content) return null;
+  // If content is a Tiptap JSON Object, convert it to string to avoid Supabase errors in TEXT columns
+  if (typeof content === 'object') return JSON.stringify(content);
+  // If it's already a string (HTML or plain text), return directly
+  return content;
+};
+
 // 🚀 Helper: Centralized Payload Validation
 const validateQuestionPayload = (payload) => {
-  if (!payload.text || !payload.text.trim()) {
+  if (!payload.text) {
     throw new Error("Validation Error: Question stem/text cannot be empty.");
   }
   
   if (payload.qType === 'mcq') {
     if (!payload.optionsArray || payload.optionsArray.length < 2) {
       throw new Error("Validation Error: MCQ must have at least 2 options.");
+    }
+    // 🔥 NEW: Prevent empty option texts if no image is provided
+    if (payload.optionsArray.some(o => !o.text && !o.imagePath)) {
+       throw new Error("Validation Error: Every MCQ option must have text or an image.");
     }
     const correctCount = payload.optionsArray.filter(o => o.isCorrect).length;
     if (correctCount !== 1) {
@@ -20,21 +33,23 @@ const validateQuestionPayload = (payload) => {
     if (!payload.cqParts || payload.cqParts.length === 0) {
       throw new Error("Validation Error: CQ must have question parts.");
     }
-    if (payload.cqParts.some(p => !p.qText || !p.qText.trim())) {
+    if (payload.cqParts.some(p => !p.qText)) {
       throw new Error("Validation Error: All CQ parts must contain question text.");
+    }
+    // 🔥 NEW: Prevent empty CQ answers
+    if (payload.cqParts.some(p => !p.aText)) {
+       throw new Error("Validation Error: All CQ parts must contain answer text.");
     }
   }
 };
 
 export const questionService = {
-  // 🚀 ১. Get Boards
   getBoards: async () => {
     const { data, error } = await supabase.from('boards').select('*').order('name');
     if (error) throw error;
     return data;
   },
 
-  // 🚀 ২. Get Questions with History & Relationships
   getQuestions: async (chapterId, topicId = null, examMaterialOnly = false, contentMaterialOnly = false) => {
     let query = supabase
       .from('questions')
@@ -67,7 +82,6 @@ export const questionService = {
     return data;
   },
 
-  // 🚀 ৩. Add Question
   addQuestion: async (payload) => {
     const { 
       subjectId, chapterId, topicId, qType, text, imagePath, 
@@ -77,19 +91,19 @@ export const questionService = {
     
     validateQuestionPayload(payload);
 
-    // ১. Main Question Insert
     const { data: qData, error: qError } = await supabase.from('questions').insert([{
       subject_id: subjectId, 
       chapter_id: chapterId, 
       topic_id: (topicId !== null && topicId !== '') ? topicId : null, 
       q_type: qType, 
-      question_text: text, 
+      question_text: formatRichText(text), 
       question_image_path: imagePath || null,
-      explanation, 
-      solution, 
+      explanation: formatRichText(explanation), 
+      solution: formatRichText(solution), 
       importance, 
       is_exam_material: isExamMaterial,
       is_content_material: isContentMaterial,
+      // 🔥 FIX 1: Send the raw object/array for jsonb columns, DO NOT formatRichText
       mcq_statements: mcqStatements || null, 
       status: 'published'
     }]).select();
@@ -102,8 +116,8 @@ export const questionService = {
         const opts = optionsArray.map((opt, i) => ({
           question_id: questionId, 
           option_order: i + 1, 
-          option_text: opt.text, 
-          option_image_path: opt.imagePath || null, // 🔥 Image path support for options
+          option_text: formatRichText(opt.text), 
+          option_image_path: opt.imagePath || null,
           is_correct: opt.isCorrect
         }));
         const { error: optError } = await supabase.from('mcq_options').insert(opts);
@@ -112,7 +126,11 @@ export const questionService = {
 
       if (qType === 'cq' && cqParts?.length > 0) {
         const parts = cqParts.map(p => ({
-          question_id: questionId, label: p.label, question_text: p.qText, answer_text: p.aText
+          question_id: questionId, 
+          label: p.label, 
+          question_text: formatRichText(p.qText), 
+          answer_text: formatRichText(p.aText),
+          explanation: formatRichText(p.explanation)
         }));
         const { error: cqError } = await supabase.from('cq_parts').insert(parts);
         if (cqError) throw cqError;
@@ -141,7 +159,6 @@ export const questionService = {
     }
   },
 
-  // 🚀 ৪. Update Question (Edit Feature)
   updateQuestion: async (questionId, payload) => {
     const { 
       topicId, qType, text, imagePath, explanation, solution, importance, 
@@ -153,13 +170,14 @@ export const questionService = {
     const { error: qError } = await supabase.from('questions').update({
       topic_id: (topicId !== null && topicId !== '') ? topicId : null, 
       q_type: qType, 
-      question_text: text, 
+      question_text: formatRichText(text), 
       question_image_path: imagePath || null,
-      explanation, 
-      solution, 
+      explanation: formatRichText(explanation), 
+      solution: formatRichText(solution), 
       importance, 
       is_exam_material: isExamMaterial,
       is_content_material: isContentMaterial,
+      // 🔥 FIX 1: Raw array for JSONB
       mcq_statements: mcqStatements || null 
     }).eq('id', questionId);
     
@@ -179,8 +197,8 @@ export const questionService = {
         const opts = optionsArray.map((opt, i) => ({ 
           question_id: questionId, 
           option_order: i + 1, 
-          option_text: opt.text, 
-          option_image_path: opt.imagePath || null, // 🔥 Image path support for options
+          option_text: formatRichText(opt.text), 
+          option_image_path: opt.imagePath || null, 
           is_correct: opt.isCorrect 
         }));
         const { error: insOptErr } = await supabase.from('mcq_options').insert(opts);
@@ -189,7 +207,11 @@ export const questionService = {
       
       if (qType === 'cq' && cqParts?.length > 0) {
         const parts = cqParts.map(p => ({ 
-          question_id: questionId, label: p.label, question_text: p.qText, answer_text: p.aText 
+          question_id: questionId, 
+          label: p.label, 
+          question_text: formatRichText(p.qText), 
+          answer_text: formatRichText(p.aText),
+          explanation: formatRichText(p.explanation)
         }));
         const { error: insCqErr } = await supabase.from('cq_parts').insert(parts);
         if (insCqErr) throw insCqErr;
@@ -215,7 +237,6 @@ export const questionService = {
     }
   },
 
-  // 🚀 ৫. Delete Question
   deleteQuestion: async (questionId) => {
     await Promise.all([
       supabase.from('mcq_options').delete().eq('question_id', questionId),
@@ -228,7 +249,6 @@ export const questionService = {
     return true;
   },
 
-  // 🚀 ৬. Upload Image to Cloudinary
   uploadImageToCloudinary: async (file) => {
     try {
       const MAX_SIZE_MB = 5;
@@ -271,7 +291,6 @@ export const questionService = {
     }
   },
 
-  // 🚀 ৭. Merge Board Tags (Required for Excel Bulk Upload)
   mergeBoardTags: async (questionId, newBoards) => {
     if (!newBoards || newBoards.length === 0) return true;
     
